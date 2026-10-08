@@ -120,7 +120,7 @@ export function SessionForm({ id, matches, initial, defaultMatchId }: { id?: str
           <Checkbox
             checked={v.enableScorePrediction}
             onChange={(e) => patch({ enableScorePrediction: e.target.checked })}
-            label="Ask for the exact score instead of Home/Away/Draw (winner is derived from the score; one score winner is auto-selected: earliest exact submission)"
+            label="Ask for the exact score instead of Home/Away/Draw (winner is derived from the score; among exact scores one score winner is drawn at random, like a raffle)"
           />
           <Checkbox
             checked={v.collectLateEntries}

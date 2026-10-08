@@ -9,7 +9,7 @@ type Outcome = "HOME" | "AWAY" | "DRAW";
 type Result = { homeScore: number; awayScore: number; winningOutcome: Outcome; resultStatus: "PENDING" | "FINAL"; version: number; finalizedLabel: string | null } | null;
 type Preview = {
   homeScore: number; awayScore: number; autoOutcome: Outcome; winningOutcome: Outcome; overridden: boolean; total: number; winners: number; losers: number;
-  scoreEnabled: boolean; exactScoreCount: number; scoreWinner: { name: string } | null;
+  scoreEnabled: boolean; exactScoreCount: number;
   otherSessions: { id: string; label: string; predictions: number }[];
 };
 
@@ -68,7 +68,7 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
         {stats.scoreEnabled && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             🏆 Exact score predicted by <strong>{stats.scoreCorrect}</strong> participant(s).{" "}
-            {stats.scoreWinnerName ? <>Score winner (earliest exact submission): <strong>{stats.scoreWinnerName}</strong>.</> : "No score winner."}
+            {stats.scoreWinnerName ? <>Score winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score winner."}
           </div>
         )}
         {error && <Alert>{error}</Alert>}
@@ -142,7 +142,11 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
             {preview.scoreEnabled && (
               <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">
                 🏆 Exact score {preview.homeScore}-{preview.awayScore} predicted by <strong>{preview.exactScoreCount}</strong> participant(s).{" "}
-                {preview.scoreWinner ? <>Score winner will be <strong>{preview.scoreWinner.name}</strong> (earliest submission).</> : "No score winner will be selected."}
+                {preview.exactScoreCount > 1
+                  ? "One score winner will be drawn at random among them when you confirm (cryptographically secure draw, recorded in the audit log)."
+                  : preview.exactScoreCount === 1
+                    ? "That participant becomes the score winner when you confirm."
+                    : "No score winner will be selected."}
               </p>
             )}
             <p className="text-xs text-slate-500">Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications. It cannot be repeated without a Super Admin reopening the result.</p>

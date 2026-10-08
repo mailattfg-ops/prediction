@@ -93,11 +93,25 @@ Enable **Ask for the exact score** on a session. The Home/Away/Draw buttons are 
 the final score for each team. The winning outcome is derived from the score on the server (a draw score
 is rejected when draws are off), so winner/lost evaluation and statistics keep working unchanged.
 
-On finalization every prediction with the exact score is marked `scoreCorrect`. If several participants got
-it right, the system auto-selects one **score winner**: the earliest submission (database timestamp, then
-id). This is deterministic and auditable; swap the `orderBy` in `finalizeResult` for a seeded shuffle if the
-client prefers a random draw. The score winner receives the `score_winner` WhatsApp template, appears on
-the Winners page, and is flagged in the exports (`Predicted Score`, `Exact Score`, `Score Winner` columns).
+On finalization every prediction with the exact score is marked `scoreCorrect` (a plain comparison, no
+randomness). If several participants got it right, one **score winner** is drawn at random, like a raffle:
+
+* Pool = all exact-score predictions of the session.
+* Draw = Fisher–Yates shuffle (Durstenfeld variant, Knuth TAOCP vol. 2 Algorithm P) where every swap
+  index comes from Node's `crypto.randomInt`, a cryptographically secure generator that uses rejection
+  sampling, so there is no modulo bias. Every entry in the pool has exactly the same chance; submission
+  time, position or anything else plays no role (`src/lib/draw.ts`, tested in `tests/draw.test.ts`).
+* The winner is the first entry of the shuffled order. The whole draw (method, pool, order, winner,
+  time, admin) is written to the audit log as `SCORE_WINNER_DRAWN`, and the Winners page shows the draw
+  record with runners-up in case a winner has to be replaced.
+* The draw happens inside the finalization transaction only; the preview never draws. Reopening and
+  re-finalizing performs a new draw and keeps the old record.
+
+References: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle and
+https://nodejs.org/api/crypto.html#cryptorandomintmin-max-callback.
+
+The score winner receives the `score_winner` WhatsApp template, appears on the Winners page, and is
+flagged in the exports (`Predicted Score`, `Exact Score`, `Score Winner` columns).
 
 ## Timed-out registrations (details after the window closes)
 

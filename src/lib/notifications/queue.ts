@@ -1,5 +1,5 @@
 import type { Match, MatchResult, NotificationType, Participant, Prediction, PredictionSession } from "@prisma/client";
-import { prisma, type Tx } from "../db";
+import { dbNow, prisma, type Tx } from "../db";
 import { audit } from "../audit";
 import { fmtDate, fmtDateTime, outcomeLabel } from "../format";
 import { renderParams, renderText, templateFor, type TemplateVars } from "./templates";
@@ -31,6 +31,9 @@ export function buildVars({ participant, prediction, match, result }: EnqueueIte
 /** Writes notification jobs inside the caller's transaction. Sending happens later, in the worker. */
 export async function enqueueNotifications(tx: Tx, items: EnqueueItem[]): Promise<number> {
   if (!items.length) return 0;
+  // The worker claims rows with the database clock, so schedule them with the database clock too
+  // (Prisma's now() default would use the app clock, and a few seconds of drift would delay sending).
+  const now = await dbNow(tx);
   const data = items.map((item) => {
     const vars = buildVars(item);
     const t = templateFor(item.type, vars);
@@ -42,6 +45,7 @@ export async function enqueueNotifications(tx: Tx, items: EnqueueItem[]): Promis
       templateName: t.name,
       phoneNumber: item.participant.mobile,
       payload: { language: t.language, params: renderParams(t, vars), text: renderText(t, vars) },
+      nextAttemptAt: now,
     };
   });
   const r = await tx.notification.createMany({ data });
@@ -68,7 +72,7 @@ export async function retryFailed(sessionId: string, actorId: string): Promise<n
   return prisma.$transaction(async (tx) => {
     const r = await tx.notification.updateMany({
       where: { sessionId, status: "FAILED" },
-      data: { status: "QUEUED", attempts: 0, nextAttemptAt: new Date(), errorMessage: null },
+      data: { status: "QUEUED", attempts: 0, nextAttemptAt: await dbNow(tx), errorMessage: null },
     });
     if (r.count) {
       await audit(tx, { actorId, action: "NOTIFICATIONS_RETRIED", entityType: "Notification", entityId: sessionId, after: { count: r.count } });

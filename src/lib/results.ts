@@ -4,6 +4,7 @@ import { ApiError } from "./http";
 import { audit } from "./audit";
 import { getSession } from "./sessions";
 import { enqueueNotifications } from "./notifications/queue";
+import { DRAW_METHOD, drawWinner } from "./draw";
 import type { ResultInput } from "./validation";
 
 /** Deterministic. The football score is the only input. */
@@ -35,13 +36,10 @@ export async function previewResult(sessionId: string, input: ResultInput) {
   ]);
   const total = rows.reduce((a, r) => a + r._count._all, 0);
   const winners = rows.find((r) => r.selectedOutcome === winningOutcome)?._count._all ?? 0;
-  const exact = session.enableScorePrediction
-    ? await prisma.prediction.findMany({
-        where: { sessionId, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore },
-        orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
-        include: { participant: { select: { fullName: true } } },
-      })
-    : [];
+  // The score winner is drawn at random inside finalizeResult, never pre-selected here.
+  const exactScoreCount = session.enableScorePrediction
+    ? await prisma.prediction.count({ where: { sessionId, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore } })
+    : 0;
   return {
     otherSessions: otherSessions.map((s) => ({
       id: s.id,
@@ -49,8 +47,7 @@ export async function previewResult(sessionId: string, input: ResultInput) {
       predictions: s._count.predictions,
     })),
     scoreEnabled: session.enableScorePrediction,
-    exactScoreCount: exact.length,
-    scoreWinner: exact[0] ? { name: exact[0].participant.fullName, submittedAt: exact[0].submittedAt } : null,
+    exactScoreCount,
     match: { homeTeam: session.match.homeTeam, awayTeam: session.match.awayTeam },
     homeScore: input.homeScore,
     awayScore: input.awayScore,
@@ -92,7 +89,8 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
     const losers = await tx.prediction.updateMany({ where: { ...where, selectedOutcome: { not: winningOutcome } }, data: { resultStatus: "LOST" } });
     await tx.predictionSession.updateMany({ where: { matchId, status: "SCHEDULED" }, data: { status: "COMPLETED" } });
 
-    // Exact-score evaluation. Tie-break among correct scores is deterministic: earliest submission (then id) per session.
+    // Exact-score evaluation. Whether a score is correct is a plain comparison; who wins the score prize
+    // among the correct ones is a raffle: a cryptographically secure random draw, recorded in the audit log.
     await tx.prediction.updateMany({ where: { ...where, predictedHomeScore: { not: null } }, data: { scoreCorrect: false, scoreWinner: false } });
     await tx.prediction.updateMany({
       where: { ...where, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore },
@@ -101,11 +99,19 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
     const scoreSessions = await tx.predictionSession.findMany({ where: { matchId, enableScorePrediction: true }, select: { id: true } });
     let scoreWinners = 0;
     for (const ss of scoreSessions) {
-      const first = await tx.prediction.findFirst({ where: { sessionId: ss.id, scoreCorrect: true }, orderBy: [{ submittedAt: "asc" }, { id: "asc" }] });
-      if (first) {
-        await tx.prediction.update({ where: { id: first.id }, data: { scoreWinner: true } });
-        scoreWinners++;
-      }
+      const pool = await tx.prediction.findMany({ where: { sessionId: ss.id, scoreCorrect: true }, select: { id: true }, orderBy: { id: "asc" } });
+      if (!pool.length) continue;
+      const { winner, order } = drawWinner(pool.map((p) => p.id));
+      if (!winner) continue;
+      await tx.prediction.update({ where: { id: winner }, data: { scoreWinner: true } });
+      await audit(tx, {
+        actorId,
+        action: "SCORE_WINNER_DRAWN",
+        entityType: "PredictionSession",
+        entityId: ss.id,
+        after: { method: DRAW_METHOD, poolSize: pool.length, pool: pool.map((p) => p.id), order, winnerPredictionId: winner, drawnAt: now },
+      });
+      scoreWinners++;
     }
 
     const preds = await tx.prediction.findMany({ where, include: { participant: true, session: { include: { match: true } } } });
@@ -125,6 +131,28 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
     });
     return { result, winners: winners.count, losers: losers.count, scoreWinners, notificationsQueued: preds.length + scoreWinners };
   });
+}
+
+/** The most recent recorded score draw for a session: method, pool size and the full draw order with names. */
+export async function getScoreDraw(sessionId: string) {
+  const log = await prisma.auditLog.findFirst({
+    where: { action: "SCORE_WINNER_DRAWN", entityType: "PredictionSession", entityId: sessionId },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!log) return null;
+  const data = log.after as { method: string; poolSize: number; order: string[]; winnerPredictionId: string };
+  const preds = await prisma.prediction.findMany({ where: { id: { in: data.order } }, include: { participant: { select: { fullName: true } } } });
+  const byId = new Map(preds.map((p) => [p.id, p]));
+  return {
+    drawnAt: log.createdAt,
+    method: data.method,
+    poolSize: data.poolSize,
+    winnerPredictionId: data.winnerPredictionId,
+    order: data.order.flatMap((id) => {
+      const p = byId.get(id);
+      return p ? [{ id: p.id, name: p.participant.fullName, submittedAt: p.submittedAt, isWinner: p.id === data.winnerPredictionId }] : [];
+    }),
+  };
 }
 
 /** SUPER_ADMIN only (enforced by the route). Unlocks the result and resets every evaluation to PENDING. */

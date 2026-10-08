@@ -1,5 +1,6 @@
 import { getSession, sessionStats } from "@/lib/sessions";
-import { fmtTime, outcomeLabel } from "@/lib/format";
+import { getScoreDraw } from "@/lib/results";
+import { fmtDateTime, fmtTime, outcomeLabel } from "@/lib/format";
 import { Alert, LinkButton } from "@/components/ui";
 import { PredictionsTable } from "@/components/PredictionsTable";
 
@@ -10,6 +11,7 @@ export default async function WinnersPage({ params }: { params: Promise<{ id: st
   const s = await getSession(id);
   const r = s.match.result?.resultStatus === "FINAL" ? s.match.result : null;
   const score = s.enableScorePrediction && r ? await sessionStats(id) : null;
+  const draw = score ? await getScoreDraw(id) : null;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -30,11 +32,29 @@ export default async function WinnersPage({ params }: { params: Promise<{ id: st
           {score.scoreWinner ? (
             <div>
               Score winner: <strong>{score.scoreWinner.participant.fullName}</strong> ({score.scoreWinner.participant.mobile}) predicted{" "}
-              {score.scoreWinner.predictedHomeScore} - {score.scoreWinner.predictedAwayScore} at {fmtTime(score.scoreWinner.submittedAt)}. Auto-selected as the earliest of{" "}
-              {score.scoreCorrect} exact-score prediction(s).
+              {score.scoreWinner.predictedHomeScore} - {score.scoreWinner.predictedAwayScore} at {fmtTime(score.scoreWinner.submittedAt)}.{" "}
+              {score.scoreCorrect > 1
+                ? `Drawn at random from ${score.scoreCorrect} exact-score predictions.`
+                : "The only exact-score prediction."}
             </div>
           ) : (
             <div>Nobody predicted the exact score.</div>
+          )}
+          {draw && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs font-medium">Draw record ({fmtDateTime(draw.drawnAt)})</summary>
+              <div className="mt-1 text-xs">
+                Method: {draw.method}. Pool: {draw.poolSize} participant(s). Draw order (winner first, then runners-up):
+                <ol className="mt-1 list-decimal pl-5">
+                  {draw.order.map((p) => (
+                    <li key={p.id}>
+                      {p.name}
+                      {p.isWinner && <strong> · winner</strong>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </details>
           )}
         </div>
       )}

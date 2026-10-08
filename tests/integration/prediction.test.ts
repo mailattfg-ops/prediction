@@ -173,11 +173,9 @@ describe.skipIf(!HAS_DB)("result finalization (database)", () => {
     const drawWinner = await prisma.notification.findFirst({ where: { sessionId: s.id, type: "PREDICTION_WINNER", createdAt: { gt: corrected.result.finalizedAt! } } });
     expect(drawWinner?.templateName).toBe("prediction_winner_draw");
 
-    // Worker (dry-run) drains the queue.
-    let total = { processed: 0, sent: 0 };
-    for (let i = 0; i < 5; i++) {
-      const r = await processQueue(100);
-      total = { processed: total.processed + r.processed, sent: total.sent + r.sent };
+    // Worker (dry-run) drains the whole queue, including any backlog left by other sessions in this database.
+    for (let i = 0; i < 1000; i++) {
+      const r = await processQueue(200);
       if (!r.processed) break;
     }
     expect(await prisma.notification.count({ where: { sessionId: s.id, status: "SENT" } })).toBe(12);
@@ -188,7 +186,7 @@ describe.skipIf(!HAS_DB)("result finalization (database)", () => {
 });
 
 describe.skipIf(!HAS_DB)("exact score prediction (database)", () => {
-  it("marks exact scores, auto-selects the earliest exact submission as score winner, notifies once, resets on reopen", async () => {
+  it("marks exact scores, draws one score winner at random among them, records the draw, notifies once, resets on reopen", async () => {
     const m3 = await prisma.match.create({ data: { homeTeam: "Barcelona", awayTeam: "Real Madrid", kickoffAt: new Date() } });
     const s = await makeSession({ startOffsetMin: -1, matchId: m3.id, enableScorePrediction: true });
     await expect(submitPrediction(s.secureToken, body())).rejects.toThrow(); // score is required when enabled
@@ -198,19 +196,30 @@ describe.skipIf(!HAS_DB)("exact score prediction (database)", () => {
     expect(first.prediction).toMatchObject({ predictedHomeScore: 2, predictedAwayScore: 1, scoreCorrect: null, scoreWinner: false });
 
     const preview = await previewResult(s.id, { homeScore: 2, awayScore: 1 });
-    expect(preview).toMatchObject({ scoreEnabled: true, exactScoreCount: 2, scoreWinner: { name: "Test User" } });
+    expect(preview).toMatchObject({ scoreEnabled: true, exactScoreCount: 2 });
+    expect(await prisma.auditLog.count({ where: { action: "SCORE_WINNER_DRAWN", entityId: s.id } })).toBe(0); // preview never draws
 
     const fin = await finalizeResult(s.id, { homeScore: 2, awayScore: 1 }, admin.id);
     expect(fin).toMatchObject({ winners: 2, losers: 1, scoreWinners: 1, notificationsQueued: 4 });
     const rows = await prisma.prediction.findMany({ where: { sessionId: s.id }, orderBy: { submittedAt: "asc" } });
     expect(rows.map((r) => r.scoreCorrect)).toEqual([true, true, false]);
-    expect(rows.map((r) => r.scoreWinner)).toEqual([true, false, false]);
-    expect(rows[0].id).toBe(first.prediction.id);
-    expect(second.prediction.id).toBe(rows[1].id);
+    // Exactly one score winner, drawn among the two exact scores; the wrong score can never win.
+    const winners = rows.filter((r) => r.scoreWinner);
+    expect(winners).toHaveLength(1);
+    expect([first.prediction.id, second.prediction.id]).toContain(winners[0].id);
+    expect(rows[2].scoreWinner).toBe(false);
     const notif = await prisma.notification.findMany({ where: { sessionId: s.id, type: "SCORE_WINNER" } });
     expect(notif).toHaveLength(1);
-    expect(notif[0].predictionId).toBe(first.prediction.id);
+    expect(notif[0].predictionId).toBe(winners[0].id);
     expect(notif[0].templateName).toBe("score_winner");
+    // The draw is recorded: pool of 2, a full order, the winner first.
+    const drawLog = await prisma.auditLog.findFirst({ where: { action: "SCORE_WINNER_DRAWN", entityId: s.id }, orderBy: { createdAt: "desc" } });
+    const draw = drawLog?.after as { poolSize: number; pool: string[]; order: string[]; winnerPredictionId: string; method: string };
+    expect(draw.poolSize).toBe(2);
+    expect([...draw.pool].sort()).toEqual([first.prediction.id, second.prediction.id].sort());
+    expect(draw.order[0]).toBe(winners[0].id);
+    expect(draw.winnerPredictionId).toBe(winners[0].id);
+    expect(draw.method).toContain("Fisher-Yates");
 
     await reopenResult(s.id, admin.id);
     const reset = await prisma.prediction.findMany({ where: { sessionId: s.id } });
