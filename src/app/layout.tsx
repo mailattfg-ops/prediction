@@ -16,8 +16,10 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={cn("h-full font-sans antialiased", geist.variable)}>
-      <body className="flex min-h-full flex-col">
+    // suppressHydrationWarning: mobile browsers and extensions (e.g. Chrome on iOS) inject their own
+    // attributes into <html>/<body> before React hydrates; that is harmless and should not show as an issue.
+    <html lang="en" className={cn("h-full font-sans antialiased", geist.variable)} suppressHydrationWarning>
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <TooltipProvider>{children}</TooltipProvider>
         <Toaster position="top-center" richColors />
       </body>

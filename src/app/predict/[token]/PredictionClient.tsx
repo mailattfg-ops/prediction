@@ -122,8 +122,10 @@ function SponsorStrip({ sponsor }: { sponsor: PublicSession["sponsor"] }) {
   const inner = (
     <>
       {sponsor.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-12 shrink-0 rounded-xl object-cover ring-2 ring-white/20" />
+        <span className="size-14 shrink-0 overflow-hidden rounded-xl ring-2 ring-white/20">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-full scale-[1.7] object-cover" />
+        </span>
       )}
       <span className="min-w-0">
         <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">{sponsor.tagline}</span>
@@ -136,21 +138,6 @@ function SponsorStrip({ sponsor }: { sponsor: PublicSession["sponsor"] }) {
     <a href={sponsor.url} target="_blank" rel="noopener noreferrer" className={cn(cls, "hover:bg-white/15")}>{inner}</a>
   ) : (
     <div className={cls}>{inner}</div>
-  );
-}
-
-/** Small sponsor line for the white cards. */
-function SponsorLine({ sponsor }: { sponsor: PublicSession["sponsor"] }) {
-  if (!sponsor) return null;
-  return (
-    <div className="mt-6 flex items-center justify-center gap-2 border-t pt-4 text-xs text-muted-foreground">
-      <span>{sponsor.tagline}</span>
-      {sponsor.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={sponsor.logoUrl} alt="" className="size-6 rounded-md object-cover" />
-      )}
-      <span className="font-bold text-foreground">{sponsor.name}</span>
-    </div>
   );
 }
 
@@ -268,7 +255,6 @@ function ClosedCard({ session }: { session: PublicSession }) {
         <p className="mt-2 text-muted-foreground">The prediction window for this match has ended.</p>
         <p className="mt-1 text-sm text-muted-foreground">Please scan a valid QR code for another active prediction.</p>
         <ResultSplit session={session} />
-        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -326,7 +312,6 @@ function ResultCard({ session }: { session: PublicSession }) {
         )}
         <ResultSplit session={session} />
         <p className="mt-6 text-xs text-muted-foreground">Thank you for participating!</p>
-        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -342,7 +327,6 @@ function TimeOutCard({ session }: { session: PublicSession }) {
         <div className="mt-4 text-lg font-bold">{session.match.homeTeam} vs {session.match.awayTeam}</div>
         <p className="mt-3 text-muted-foreground">Thank you for your interest.</p>
         <ResultSplit session={session} />
-        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -370,7 +354,6 @@ function SuccessCard({ session, predictedTeam, score }: { session: PublicSession
           A WhatsApp confirmation will be sent to your number. After the match, the final score and the winner are announced on WhatsApp and right here: scan the QR code again to see them.
         </p>
         <ResultSplit session={session} />
-        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -495,7 +478,8 @@ function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
   const err = (k: string) => (errors[k] ? <p className="text-xs text-destructive">{errors[k]}</p> : null);
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4">
+    // suppressHydrationWarning: Chrome on iOS tags forms with __gcruniqueid for autofill before hydration.
+    <form onSubmit={submit} noValidate className="space-y-4" suppressHydrationWarning>
       <Card className="shadow-2xl">
         <CardHeader>
           <CardTitle>Your details</CardTitle>

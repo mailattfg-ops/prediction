@@ -54,8 +54,10 @@ export default async function QrPage({ params }: { params: Promise<{ id: string 
             {sponsor && (
               <div className="mb-4 inline-flex items-center gap-3 rounded-xl border bg-muted/40 px-4 py-2 print:border-0">
                 {sponsor.logoUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-12 rounded-lg object-cover print:size-16" />
+                  <span className="size-12 shrink-0 overflow-hidden rounded-lg print:size-16">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-full scale-[1.7] object-cover" />
+                  </span>
                 )}
                 <span className="text-left">
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{sponsor.tagline}</span>
