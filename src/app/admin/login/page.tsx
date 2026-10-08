@@ -22,7 +22,7 @@ export default function LoginPage() {
               )}
               <span>
                 <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">{sponsor.tagline}</span>
-                <span className="block text-lg font-black leading-tight">{sponsor.name}</span>
+                <span className="block font-display text-[26px] leading-none tracking-wide">{sponsor.name}</span>
               </span>
             </div>
           )}
@@ -30,7 +30,7 @@ export default function LoginPage() {
             <span className="flex size-12 items-center justify-center rounded-2xl bg-primary text-2xl shadow-lg">⚽</span>
             <div>
               <div className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Football Prediction</div>
-              <h1 className="text-3xl font-black tracking-tight">Admin console</h1>
+              <h1 className="font-display text-[44px] leading-none tracking-wide">Admin console</h1>
             </div>
           </div>
           <p className="mt-4 max-w-md text-white/70">Create matches, open prediction sessions, print QR codes, enter results and announce winners.</p>

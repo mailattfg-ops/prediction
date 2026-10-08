@@ -9,6 +9,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/components/api";
+import type { Sponsor } from "@/lib/sponsor";
 import { cn } from "@/lib/utils";
 
 type User = { name: string; email: string; role: string };
@@ -19,54 +20,76 @@ const NAV = [
   { href: "/admin/matches", label: "Matches", icon: Trophy, exact: false },
 ];
 
-export function AdminShell({ user, children }: { user: User; children: React.ReactNode }) {
+export function AdminShell({ user, sponsor, children }: { user: User; sponsor: Sponsor | null; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const isActive = (item: (typeof NAV)[number]) => (item.exact ? pathname === item.href : pathname.startsWith(item.href));
 
   const nav = (onNavigate?: () => void) => (
     <nav className="flex flex-col gap-1">
-      {NAV.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={onNavigate}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            isActive(item)
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-          )}
-        >
-          <item.icon className="size-4" />
-          {item.label}
-        </Link>
-      ))}
+      {NAV.map((item) => {
+        const active = isActive(item);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className={cn(
+              "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+            )}
+          >
+            {active && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-sidebar-primary" />}
+            <item.icon className={cn("size-4", active && "text-sidebar-primary")} />
+            {item.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 
   const brand = (
     <div className="flex items-center gap-3">
-      <span className="flex size-9 items-center justify-center rounded-xl bg-sidebar-primary text-lg">⚽</span>
-      <div>
-        <div className="text-sm font-bold leading-tight">Prediction</div>
-        <div className="text-xs text-sidebar-foreground/60">Admin console</div>
+      <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-lg shadow-[0_8px_20px_-8px_oklch(0.7_0.17_160)]">⚽</span>
+      <div className="leading-none">
+        <div className="font-display text-[22px] tracking-wide">Prediction</div>
+        <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/50">Admin console</div>
+      </div>
+    </div>
+  );
+
+  const partner = sponsor && (
+    <div className="rounded-xl bg-white/[0.04] p-2.5 ring-1 ring-white/10">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/45">Event partner</div>
+      <div className="mt-2 flex items-center gap-2.5">
+        {sponsor.logoUrl && (
+          <span className="size-9 shrink-0 overflow-hidden rounded-lg ring-1 ring-white/15">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-full scale-[1.7] object-cover" />
+          </span>
+        )}
+        <span className="truncate font-display text-xl tracking-wide">{sponsor.name}</span>
       </div>
     </div>
   );
 
   return (
     <div className="flex min-h-screen">
-      <aside className="no-print hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-        <div className="flex h-16 items-center px-5">{brand}</div>
+      <aside className="no-print hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+        <div className="flex h-[72px] items-center px-5">{brand}</div>
         <div className="px-3 py-2">{nav()}</div>
         <div className="px-3 pt-2">
           <Button nativeButton={false} render={<Link href="/admin/sessions/new" />} className="w-full bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90">
             <Plus data-icon="inline-start" /> New session
           </Button>
         </div>
-        <div className="mt-auto border-t border-sidebar-border p-3">
-          <UserMenu user={user} onSidebar />
+        <div className="mt-auto space-y-2 p-3">
+          {partner}
+          <div className="border-t border-sidebar-border pt-2">
+            <UserMenu user={user} onSidebar />
+          </div>
         </div>
       </aside>
 
@@ -86,9 +109,10 @@ export function AdminShell({ user, children }: { user: User; children: React.Rea
                   <Plus data-icon="inline-start" /> New session
                 </Button>
               </div>
+              <div className="mt-auto p-3">{partner}</div>
             </SheetContent>
           </Sheet>
-          <span className="font-semibold">⚽ Prediction Admin</span>
+          <span className="font-display text-xl tracking-wide">⚽ Prediction</span>
           <div className="ml-auto">
             <UserMenu user={user} />
           </div>
@@ -112,7 +136,7 @@ function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean
           />
         }
       >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">{initials || "A"}</span>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/30 to-emerald-600/30 text-xs font-bold text-emerald-300 ring-1 ring-emerald-400/30">{initials || "A"}</span>
         {onSidebar && (
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-sm font-medium">{user.name}</span>

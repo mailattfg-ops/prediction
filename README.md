@@ -274,7 +274,7 @@ is the only state store. A separate worker process drains the notification queue
 | Layer | Choice |
 |---|---|
 | App | Next.js 16 (App Router, TypeScript), Tailwind CSS 4 |
-| UI | shadcn/ui on Base UI primitives (`src/components/ui`), lucide-react icons, recharts, sonner toasts, canvas-confetti |
+| UI | shadcn/ui on Base UI primitives (`src/components/ui`), lucide-react icons, recharts, sonner toasts, Motion animations, canvas-confetti, Bebas Neue display font via next/font |
 | Database | PostgreSQL + Prisma 6 |
 | Auth | bcrypt, HS256 JWT (`jose`) in an httpOnly cookie, `src/proxy.ts` gate |
 | Validation | zod on every input |
