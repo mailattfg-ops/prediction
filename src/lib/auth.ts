@@ -1,11 +1,26 @@
 import "server-only";
+import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import type { Role } from "@prisma/client";
+import { prisma } from "./db";
 import { ApiError } from "./http";
 import { SESSION_COOKIE, SESSION_TTL_SEC, verifySessionToken, type AdminSession } from "./jwt";
 
 export { signSession } from "./jwt";
+
+/** AUTH_DISABLED=true opens the admin console without a login (temporary / private demos only). */
+export const authDisabled = () => process.env.AUTH_DISABLED === "true";
+
+/** In open-access mode every visitor acts as the first admin account (created if none exists) so audit logs and foreign keys stay valid. */
+async function openAccessAdmin(): Promise<AdminSession> {
+  const user =
+    (await prisma.adminUser.findFirst({ orderBy: { createdAt: "asc" } })) ??
+    (await prisma.adminUser.create({
+      data: { email: "open-access@local", name: "Open access", passwordHash: await hashPassword(randomBytes(24).toString("hex")), role: "SUPER_ADMIN" },
+    }));
+  return { sub: user.id, email: user.email, name: user.name, role: user.role };
+}
 
 export const sessionCookieOptions = {
   httpOnly: true,
@@ -16,6 +31,7 @@ export const sessionCookieOptions = {
 };
 
 export async function getAdmin(): Promise<AdminSession | null> {
+  if (authDisabled()) return openAccessAdmin();
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   return token ? verifySessionToken(token) : null;
 }

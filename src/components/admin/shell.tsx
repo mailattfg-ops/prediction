@@ -21,7 +21,7 @@ const NAV = [
   { href: "/admin/matches", label: "Matches", icon: Trophy, exact: false },
 ];
 
-export function AdminShell({ user, sponsor, children }: { user: User; sponsor: Sponsor | null; children: React.ReactNode }) {
+export function AdminShell({ user, sponsor, openAccess = false, children }: { user: User; sponsor: Sponsor | null; openAccess?: boolean; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const isActive = (item: (typeof NAV)[number]) => (item.exact ? pathname === item.href : pathname.startsWith(item.href));
@@ -89,7 +89,7 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
         <div className="mt-auto space-y-2 p-3">
           {partner}
           <div className="border-t border-sidebar-border pt-2">
-            <UserMenu user={user} onSidebar />
+            <UserMenu user={user} onSidebar openAccess={openAccess} />
           </div>
         </div>
       </aside>
@@ -115,7 +115,7 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
           </Sheet>
           <span className="flex items-center gap-2 font-display text-xl tracking-wide"><BrandMark size="sm" /> Prediction</span>
           <div className="ml-auto">
-            <UserMenu user={user} />
+            <UserMenu user={user} openAccess={openAccess} />
           </div>
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
@@ -124,7 +124,7 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
   );
 }
 
-function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean }) {
+function UserMenu({ user, onSidebar = false, openAccess = false }: { user: User; onSidebar?: boolean; openAccess?: boolean }) {
   const router = useRouter();
   const initials = user.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
@@ -155,15 +155,21 @@ function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean
         <DropdownMenuItem disabled>
           <ShieldCheck /> {user.role === "SUPER_ADMIN" ? "Super admin" : "Admin"}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={async () => {
-            await api("/api/auth/logout", { method: "POST" });
-            router.push("/admin/login");
-            router.refresh();
-          }}
-        >
-          <LogOut /> Log out
-        </DropdownMenuItem>
+        {openAccess ? (
+          <DropdownMenuItem disabled>
+            <LogOut /> Login is switched off
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={async () => {
+              await api("/api/auth/logout", { method: "POST" });
+              router.push("/admin/login");
+              router.refresh();
+            }}
+          >
+            <LogOut /> Log out
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -37,7 +37,7 @@ export async function GET() {
   if (database === "ok" && migrations === "ok" && !adminAccounts) hints.push("No admin account: run `npm run admin:set -- <email> <password> \"<name>\"` against this database, or set SEED_ADMIN_* and redeploy.");
 
   return NextResponse.json(
-    { ok, database, migrations, adminAccounts, missingEnv, hints, time: new Date().toISOString() },
+    { ok, database, migrations, adminAccounts, missingEnv, hints, loginRequired: process.env.AUTH_DISABLED !== "true", time: new Date().toISOString() },
     { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
   );
 }

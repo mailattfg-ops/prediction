@@ -241,7 +241,8 @@ Useful scripts:
 | `WHATSAPP_TEMPLATE_SUBMITTED`, `_WINNER`, `_WINNER_DRAW`, `_LOST`, `_SCORE_WINNER`, `_RESULT` | Names of the approved templates |
 | `CRON_SECRET` | Bearer token for `POST /api/jobs/notifications` (serverless alternative to the worker) |
 | `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` | Sponsor branding; empty name hides it. Logo can be a file in `public/sponsors/` or an https URL |
-| `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` | When both are set, the sign-in page shows an "Autofill demo credentials" button. Leave empty in production || `FOOTBALL_API_KEY` | Reserved for a future football data provider |
+| `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` | When both are set, the sign-in page shows an "Autofill demo credentials" button. Leave empty in production |
+| `AUTH_DISABLED` | `true` opens the admin console without any login (every visitor acts as the first admin account). Anyone with the link can then manage events and read participant data; use only for private demos and set it back to `false` afterwards || `FOOTBALL_API_KEY` | Reserved for a future football data provider |
 
 ## 8. WhatsApp setup
 

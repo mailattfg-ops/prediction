@@ -4,6 +4,12 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/jwt";
 /** Gate for the admin UI and admin APIs. Handlers re-verify the cookie and check roles themselves. */
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // AUTH_DISABLED=true: no login at all; the login page just forwards to the dashboard.
+  if (process.env.AUTH_DISABLED === "true") {
+    return pathname === "/admin/login" ? NextResponse.redirect(new URL("/admin", req.url)) : NextResponse.next();
+  }
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const admin = token ? await verifySessionToken(token) : null;
 
