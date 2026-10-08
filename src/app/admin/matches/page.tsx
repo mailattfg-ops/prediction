@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { Pencil, Plus, QrCode } from "lucide-react";
 import { listMatches } from "@/lib/matches";
 import { fmtDateTime, outcomeLabel } from "@/lib/format";
-import { LinkButton, Td, Th } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/admin/page-header";
 import { MatchDeleteButton } from "./MatchDeleteButton";
 
 export const metadata = { title: "Matches · Prediction Admin" };
@@ -9,45 +13,66 @@ export const metadata = { title: "Matches · Prediction Admin" };
 export default async function MatchesPage() {
   const matches = await listMatches();
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Matches</h1>
-        <LinkButton href="/admin/matches/new" variant="primary">+ New match</LinkButton>
-      </div>
+    <>
+      <PageHeader
+        title="Matches"
+        description="Fixtures that sessions are built on. Teams are defined per match."
+        actions={
+          <Button nativeButton={false} render={<Link href="/admin/matches/new" />}>
+            <Plus data-icon="inline-start" /> New match
+          </Button>
+        }
+      />
       {matches.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500">No matches yet.</div>
+        <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">No matches yet. Create the first fixture to start a session.</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr><Th>Match</Th><Th>Competition</Th><Th>Kick-off</Th><Th>Venue</Th><Th>Sessions</Th><Th>Result</Th><Th>Actions</Th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Match</TableHead>
+                <TableHead>Competition</TableHead>
+                <TableHead>Kick-off</TableHead>
+                <TableHead>Venue</TableHead>
+                <TableHead className="text-right">Sessions</TableHead>
+                <TableHead>Result</TableHead>
+                <TableHead className="w-[1%]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {matches.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50">
-                  <Td className="font-medium">{m.homeTeam} vs {m.awayTeam}</Td>
-                  <Td>{m.competition ?? "—"}</Td>
-                  <Td>{fmtDateTime(m.kickoffAt)}</Td>
-                  <Td>{m.venue ?? "—"}</Td>
-                  <Td>{m._count.sessions}</Td>
-                  <Td>
-                    {m.result && m.result.resultStatus === "FINAL"
-                      ? `${m.result.homeScore} - ${m.result.awayScore} (${outcomeLabel(m.result.winningOutcome, m)})`
-                      : "—"}
-                  </Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-3 text-xs">
-                      <Link href={`/admin/sessions/new?matchId=${m.id}`} className="text-emerald-700 hover:underline">New session</Link>
-                      <Link href={`/admin/matches/${m.id}/edit`} className="text-sky-700 hover:underline">Edit</Link>
+                <TableRow key={m.id}>
+                  <TableCell className="font-medium">{m.homeTeam} vs {m.awayTeam}</TableCell>
+                  <TableCell className="text-muted-foreground">{m.competition ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtDateTime(m.kickoffAt)}</TableCell>
+                  <TableCell className="text-muted-foreground">{m.venue ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{m._count.sessions}</TableCell>
+                  <TableCell>
+                    {m.result && m.result.resultStatus === "FINAL" ? (
+                      <Badge variant="secondary" className="bg-violet-500/15 text-violet-700">
+                        {m.result.homeScore} - {m.result.awayScore} · {outcomeLabel(m.result.winningOutcome, m)}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button nativeButton={false} variant="outline" size="sm" render={<Link href={`/admin/sessions/new?matchId=${m.id}`} />}>
+                        <QrCode data-icon="inline-start" /> New session
+                      </Button>
+                      <Button nativeButton={false} variant="ghost" size="icon-sm" render={<Link href={`/admin/matches/${m.id}/edit`} aria-label="Edit match" />}>
+                        <Pencil />
+                      </Button>
                       <MatchDeleteButton id={m.id} label={`${m.homeTeam} vs ${m.awayTeam}`} />
                     </div>
-                  </Td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -1,58 +1,64 @@
+import { Trophy } from "lucide-react";
 import { listPredictions } from "@/lib/predictions";
 import { fmtDateTime, outcomeLabel } from "@/lib/format";
 import type { SessionWithStatus } from "@/lib/sessions";
-import { Td, Th } from "@/components/ui";
-
-const resultStyle: Record<string, string> = {
-  WINNER: "bg-emerald-100 text-emerald-800",
-  LOST: "bg-slate-200 text-slate-700",
-  PENDING: "bg-amber-100 text-amber-800",
-};
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ResultBadge } from "@/components/admin/status-badge";
 
 export async function PredictionsTable({ session, winnersOnly }: { session: SessionWithStatus; winnersOnly: boolean }) {
   const rows = await listPredictions(session.id, { winnersOnly });
   if (!rows.length) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500">{winnersOnly ? "No winners yet. Finalize the match result first." : "No predictions yet."}</div>;
+    return (
+      <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+        {winnersOnly ? "No winners yet. Finalize the match result first." : "No predictions yet."}
+      </div>
+    );
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="min-w-full divide-y divide-slate-200">
-        <thead className="bg-slate-50">
-          <tr>
-            <Th>#</Th><Th>Name</Th><Th>Mobile</Th><Th>Email</Th><Th>Prediction</Th><Th>Result</Th>
-            {session.enableScorePrediction && <><Th>Score</Th><Th>Exact score</Th></>}
-            <Th>Submitted At</Th>
-            {session.fields.map((f) => <Th key={f.key}>{f.label}</Th>)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-10">#</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Mobile</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Prediction</TableHead>
+            <TableHead>Result</TableHead>
+            {session.enableScorePrediction && <><TableHead>Score</TableHead><TableHead>Exact score</TableHead></>}
+            <TableHead>Submitted</TableHead>
+            {session.fields.map((f) => <TableHead key={f.key}>{f.label}</TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((p, i) => {
             const custom = (p.customData ?? {}) as Record<string, unknown>;
             return (
-              <tr key={p.id} className="hover:bg-slate-50">
-                <Td className="text-slate-400">{i + 1}</Td>
-                <Td className="font-medium">{p.participant.fullName}</Td>
-                <Td>{p.participant.mobile}</Td>
-                <Td>{p.participant.email}</Td>
-                <Td className="font-semibold">{outcomeLabel(p.selectedOutcome, session.match)}</Td>
-                <Td><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${resultStyle[p.resultStatus]}`}>{p.resultStatus}</span></Td>
+              <TableRow key={p.id}>
+                <TableCell className="text-muted-foreground tabular-nums">{i + 1}</TableCell>
+                <TableCell className="font-medium">{p.participant.fullName}</TableCell>
+                <TableCell className="tabular-nums">{p.participant.mobile}</TableCell>
+                <TableCell className="text-muted-foreground">{p.participant.email}</TableCell>
+                <TableCell className="font-semibold">{outcomeLabel(p.selectedOutcome, session.match)}</TableCell>
+                <TableCell><ResultBadge status={p.resultStatus} /></TableCell>
                 {session.enableScorePrediction && (
                   <>
-                    <Td className="font-semibold">{p.predictedHomeScore == null ? "—" : `${p.predictedHomeScore} - ${p.predictedAwayScore}`}</Td>
-                    <Td>
+                    <TableCell className="font-semibold tabular-nums">{p.predictedHomeScore == null ? "—" : `${p.predictedHomeScore} - ${p.predictedAwayScore}`}</TableCell>
+                    <TableCell>
                       {p.scoreWinner ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">🏆 Score winner</span>
+                        <Badge className="bg-amber-500/15 text-amber-800 hover:bg-amber-500/15"><Trophy /> Score winner</Badge>
                       ) : p.scoreCorrect == null ? "—" : p.scoreCorrect ? "✓ exact" : "✗"}
-                    </Td>
+                    </TableCell>
                   </>
                 )}
-                <Td>{fmtDateTime(p.submittedAt)}</Td>
-                {session.fields.map((f) => <Td key={f.key}>{custom[f.key] == null ? "—" : String(custom[f.key])}</Td>)}
-              </tr>
+                <TableCell className="whitespace-nowrap text-muted-foreground">{fmtDateTime(p.submittedAt)}</TableCell>
+                {session.fields.map((f) => <TableCell key={f.key}>{custom[f.key] == null ? "—" : String(custom[f.key])}</TableCell>)}
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

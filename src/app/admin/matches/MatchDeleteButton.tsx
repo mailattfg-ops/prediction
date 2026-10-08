@@ -1,9 +1,15 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Trash2, TriangleAlert } from "lucide-react";
 import { api, ApiClientError } from "@/components/api";
-import { Modal } from "@/components/Modal";
-import { Alert, Button, Input } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Usage = { sessions: number; predictions: number; lateEntries: number };
 
@@ -35,6 +41,7 @@ export function MatchDeleteButton({ id, label }: { id: string; label: string }) 
     setError(null);
     try {
       await api(`/api/matches/${id}`, { method: "DELETE", body: { confirm: typed.trim() } });
+      toast.success(`${label} deleted.`);
       setOpen(false);
       router.refresh();
     } catch (e) {
@@ -46,44 +53,52 @@ export function MatchDeleteButton({ id, label }: { id: string; label: string }) 
 
   return (
     <>
-      <button type="button" className="text-rose-700 hover:underline" onClick={openDialog}>
-        Delete
-      </button>
-      <Modal open={open} title="Delete match" onClose={() => (busy ? undefined : setOpen(false))}>
-        <div className="space-y-3 text-sm text-slate-700">
-          <p>
-            You are about to permanently delete <strong>{label}</strong>. This will also delete:
-          </p>
-          {usage ? (
-            <ul className="list-disc space-y-0.5 pl-5">
-              <li>{usage.sessions} prediction session(s) and their QR codes</li>
-              <li>{usage.predictions} prediction(s)</li>
-              <li>{usage.lateEntries} timed-out registration(s)</li>
-              <li>the match result and the WhatsApp notification logs of these sessions</li>
-            </ul>
-          ) : (
-            <p className="text-slate-500">Loading what will be deleted…</p>
+      <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label="Delete match" onClick={openDialog}>
+        <Trash2 />
+      </Button>
+      <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete match</DialogTitle>
+            <DialogDescription>
+              You are about to permanently delete <strong className="text-foreground">{label}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <Alert variant="destructive">
+            <TriangleAlert />
+            <AlertTitle>This cannot be undone</AlertTitle>
+            <AlertDescription>
+              {usage ? (
+                <ul className="list-disc pl-4">
+                  <li>{usage.sessions} prediction session(s) and their QR codes</li>
+                  <li>{usage.predictions} prediction(s)</li>
+                  <li>{usage.lateEntries} timed-out registration(s)</li>
+                  <li>the match result and the WhatsApp notification logs</li>
+                </ul>
+              ) : (
+                <div className="space-y-1.5"><Skeleton className="h-3 w-48" /><Skeleton className="h-3 w-32" /><Skeleton className="h-3 w-40" /></div>
+              )}
+            </AlertDescription>
+          </Alert>
+          <div className="space-y-2">
+            <Label htmlFor={`confirm-${id}`}>
+              Type <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-destructive">{label}</code> to confirm
+            </Label>
+            <Input id={`confirm-${id}`} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={label} autoComplete="off" autoFocus />
+          </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-          <p>
-            Participant identities are kept for other sessions. <strong>This cannot be undone.</strong>
-          </p>
-          <label className="block">
-            <span className="mb-1 block font-medium">
-              Type <code className="rounded bg-slate-100 px-1.5 py-0.5 text-rose-700">{label}</code> to confirm
-            </span>
-            <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={label} autoFocus autoComplete="off" />
-          </label>
-          {error && <Alert>{error}</Alert>}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={remove} disabled={!confirmed || busy || !usage}>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+            <Button variant="destructive" onClick={remove} disabled={!confirmed || busy || !usage}>
               {busy ? "Deleting…" : "I understand, delete this match"}
             </Button>
-          </div>
-        </div>
-      </Modal>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -1,9 +1,20 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import confetti from "canvas-confetti";
+import { AlarmClock, Ban, CheckCircle2, Hourglass, Minus, Plus, Trophy } from "lucide-react";
 import type { PublicSession } from "@/lib/sessions";
 import { api, ApiClientError } from "@/components/api";
-import { Modal } from "@/components/Modal";
-import { Alert, Button, Checkbox, Field, Input, Select } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 type Phase = "upcoming" | "open" | "closed" | "cancelled";
 type Outcome = "HOME" | "AWAY" | "DRAW";
@@ -18,7 +29,7 @@ function clock(ms: number) {
 
 export function PredictionClient({ initial }: { initial: PublicSession }) {
   const [session, setSession] = useState(initial);
-  // Server clock offset: the browser clock is only used to animate, never to decide.
+  // Server clock offset: the browser clock only animates, it never decides.
   const [offset, setOffset] = useState(() => Date.parse(initial.serverTime) - Date.now());
   const [now, setNow] = useState(() => Date.now() + offset);
   const [success, setSuccess] = useState<{ predictedTeam: string; score: string | null } | null>(null);
@@ -34,7 +45,7 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
     return () => clearInterval(id);
   }, [offset]);
 
-  // Re-sync with the server every 30 s (picks up cancellations and clock drift).
+  // Re-sync with the server every 30 s (picks up cancellations, results and clock drift).
   const resync = useCallback(async () => {
     try {
       const { session: fresh } = await api<{ session: PublicSession }>(`/api/public/sessions/${initial.token}`);
@@ -48,6 +59,11 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
     const id = setInterval(resync, 30_000);
     return () => clearInterval(id);
   }, [resync]);
+
+  useEffect(() => {
+    if (!success) return;
+    confetti({ particleCount: 140, spread: 75, origin: { y: 0.65 }, colors: ["#10b981", "#34d399", "#fbbf24", "#60a5fa", "#ffffff"] });
+  }, [success]);
 
   const start = Date.parse(session.startTime);
   const expiry = Date.parse(session.expiryTime);
@@ -67,11 +83,10 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
       ) : timedOut ? (
         <TimeOutCard session={session} />
       ) : resultOut ? (
-        // The admin has finalized the result: anyone reopening the QR page sees the score and the winner.
         <ResultCard session={session} />
       ) : phase === "open" || (phase === "closed" && session.collectLateEntries) ? (
-        // After expiry (when the session keeps collecting details) the form stays exactly as it is;
-        // the server rejects the prediction at submit, the details are kept, and the popup appears then.
+        // After expiry (when the session keeps collecting details) the form stays as it is; the server
+        // rejects the prediction at submit, the details are kept, and the popup appears then.
         <PredictionForm
           session={session}
           onSuccess={(predictedTeam, score) => setSuccess({ predictedTeam, score })}
@@ -79,19 +94,24 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
           onClosed={(status) => setSession((s) => ({ ...s, status }))}
         />
       ) : phase === "upcoming" ? (
-        <InfoCard icon="⏳" title="Not Open Yet" body="Prediction has not started yet. Keep this page open, the form will appear when the window opens." />
+        <InfoCard icon={<Hourglass className="size-10 text-primary" />} title="Not open yet" body="Prediction has not started yet. Keep this page open, the form appears when the window opens." />
       ) : phase === "cancelled" ? (
-        <InfoCard icon="🚫" title="Session Cancelled" body="This prediction session has been cancelled. Please scan a valid QR code for another active prediction." />
+        <InfoCard icon={<Ban className="size-10 text-destructive" />} title="Session cancelled" body="This prediction session has been cancelled. Please scan a valid QR code for another active prediction." />
       ) : (
         <ClosedCard session={session} />
       )}
-      <Modal open={popup} title="Prediction Time Over" onClose={() => setPopup(false)}>
-        <p className="text-slate-700">The prediction window for this match has ended, so your prediction could not be counted.</p>
-        <p className="mt-2 text-slate-700">Thank you for your interest.</p>
-        <div className="mt-4 flex justify-end">
-          <Button onClick={() => setPopup(false)}>OK</Button>
-        </div>
-      </Modal>
+      <Dialog open={popup} onOpenChange={setPopup}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><AlarmClock className="size-5 text-destructive" /> Prediction time over</DialogTitle>
+            <DialogDescription>The prediction window for this match has ended, so your prediction could not be counted.</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm">Thank you for your interest.</p>
+          <DialogFooter>
+            <Button onClick={() => setPopup(false)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -102,75 +122,72 @@ function TeamBadge({ name, logo }: { name: string; logo: string | null }) {
     <div className="flex flex-1 flex-col items-center gap-2">
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt={name} className="h-16 w-16 object-contain" />
+        <img src={logo} alt={name} className="size-16 object-contain drop-shadow" />
       ) : (
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-700">{initials}</div>
+        <div className="flex size-16 items-center justify-center rounded-full bg-white/10 text-lg font-black text-white ring-1 ring-white/20">{initials}</div>
       )}
-      <div className="text-center text-sm font-semibold leading-tight">{name}</div>
+      <div className="text-center text-sm font-semibold leading-tight text-white">{name}</div>
     </div>
   );
 }
 
 function MatchHeader({ session, phase, remaining }: { session: PublicSession; phase: Phase; remaining: number }) {
+  const final = session.finalScore && phase !== "cancelled" ? session.finalScore : null;
+  const live = !final && phase === "open";
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-xl">
-      <div className="text-center text-xs font-semibold uppercase tracking-widest text-emerald-700">Football Prediction</div>
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-white shadow-2xl backdrop-blur">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Football Prediction</span>
+        {live && <Badge className="bg-emerald-500 text-white"><span className="size-1.5 animate-pulse rounded-full bg-white" /> Live</Badge>}
+      </div>
       {(session.campaignName || session.eventName) && (
-        <div className="mt-1 text-center text-xs text-slate-500">{[session.eventName, session.campaignName].filter(Boolean).join(" · ")}</div>
+        <div className="mt-1 text-xs text-white/60">{[session.eventName, session.campaignName].filter(Boolean).join(" · ")}</div>
       )}
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-5 flex items-center gap-2">
         <TeamBadge name={session.match.homeTeam} logo={session.match.homeTeamLogo} />
-        <div className="text-xl font-black text-slate-400">VS</div>
+        <div className="px-2 text-xl font-black text-white/40">VS</div>
         <TeamBadge name={session.match.awayTeam} logo={session.match.awayTeamLogo} />
       </div>
-      <div className="mt-4 text-center text-sm text-slate-600">
+      <div className="mt-4 text-center text-sm text-white/70">
         {session.match.competition && <div>{session.match.competition}</div>}
         <div>{session.match.kickoffLabel}</div>
-        {session.match.venue && <div className="text-xs text-slate-500">{session.match.venue}</div>}
+        {session.match.venue && <div className="text-xs text-white/50">{session.match.venue}</div>}
       </div>
-      <div className="mt-4 rounded-xl bg-slate-900 px-4 py-3 text-center text-white" aria-live="polite">
-        {session.finalScore && phase !== "cancelled" ? (
+      <div className="mt-4 rounded-xl bg-black/30 px-4 py-3 text-center ring-1 ring-white/10" aria-live="polite">
+        {final ? (
           <>
-            <div className="text-xs uppercase tracking-wide text-slate-300">Full time</div>
-            <div className="font-mono text-3xl font-bold tabular-nums">
-              {session.finalScore.homeScore} - {session.finalScore.awayScore}
-            </div>
+            <div className="text-[11px] uppercase tracking-widest text-white/60">Full time</div>
+            <div className="font-mono text-4xl font-black tabular-nums">{final.homeScore} - {final.awayScore}</div>
           </>
-        ) : null}
-        {!session.finalScore && phase === "open" && (
+        ) : phase === "open" || (phase === "closed" && session.collectLateEntries) ? (
           <>
-            <div className="text-xs uppercase tracking-wide text-slate-300">Prediction closes in</div>
-            <div className="font-mono text-3xl font-bold tabular-nums">{clock(remaining)}</div>
+            <div className="text-[11px] uppercase tracking-widest text-white/60">Prediction closes in</div>
+            <div className="font-mono text-4xl font-black tabular-nums">{phase === "open" ? clock(remaining) : "00:00"}</div>
           </>
+        ) : phase === "upcoming" ? (
+          <>
+            <div className="text-[11px] uppercase tracking-widest text-white/60">Prediction opens in</div>
+            <div className="font-mono text-4xl font-black tabular-nums">{clock(remaining)}</div>
+          </>
+        ) : phase === "cancelled" ? (
+          <div className="text-lg font-bold">Session cancelled</div>
+        ) : (
+          <div className="text-lg font-bold">Prediction closed</div>
         )}
-        {!session.finalScore && phase === "upcoming" && (
-          <>
-            <div className="text-xs uppercase tracking-wide text-slate-300">Prediction opens in</div>
-            <div className="font-mono text-3xl font-bold tabular-nums">{clock(remaining)}</div>
-          </>
-        )}
-        {!session.finalScore && phase === "closed" &&
-          (session.collectLateEntries ? (
-            <>
-              <div className="text-xs uppercase tracking-wide text-slate-300">Prediction closes in</div>
-              <div className="font-mono text-3xl font-bold tabular-nums">00:00</div>
-            </>
-          ) : (
-            <div className="text-lg font-bold">Prediction Closed</div>
-          ))}
-        {phase === "cancelled" && <div className="text-lg font-bold">Session Cancelled</div>}
       </div>
     </div>
   );
 }
 
-function InfoCard({ icon, title, body }: { icon: string; title: string; body: string }) {
+function InfoCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
-      <div className="text-4xl">{icon}</div>
-      <h2 className="mt-3 text-xl font-bold">{title}</h2>
-      <p className="mt-2 text-slate-600">{body}</p>
-    </div>
+    <Card className="shadow-2xl">
+      <CardContent className="py-8 text-center">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-muted">{icon}</div>
+        <h2 className="mt-4 text-xl font-bold">{title}</h2>
+        <p className="mt-2 text-muted-foreground">{body}</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -184,39 +201,36 @@ function ResultSplit({ session }: { session: PublicSession }) {
     ...(session.allowDraw ? [["Draw", r.draw] as const] : []),
   ] as const;
   return (
-    <div className="mt-5 rounded-xl bg-slate-50 p-4 text-left">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">How everyone voted ({r.total})</div>
-      <div className="mt-2 space-y-2">
+    <div className="mt-6 rounded-xl bg-muted/60 p-4 text-left">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How everyone voted ({r.total})</div>
+      <div className="mt-3 space-y-2.5">
         {rows.map(([label, n]) => (
           <div key={label}>
             <div className="flex justify-between text-sm">
               <span>{label}</span>
-              <span className="font-semibold">{pct(n)}%</span>
+              <span className="font-semibold tabular-nums">{pct(n)}%</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full bg-emerald-500" style={{ width: `${pct(n)}%` }} />
+            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-background">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct(n)}%` }} />
             </div>
           </div>
         ))}
       </div>
-      {session.finalScore && (
-        <div className="mt-3 text-center text-sm font-semibold">
-          Final score: {session.match.homeTeam} {session.finalScore.homeScore} - {session.finalScore.awayScore} {session.match.awayTeam}
-        </div>
-      )}
     </div>
   );
 }
 
 function ClosedCard({ session }: { session: PublicSession }) {
   return (
-    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
-      <div className="text-4xl">⏰</div>
-      <h2 className="mt-3 text-xl font-bold">Prediction Closed</h2>
-      <p className="mt-2 text-slate-600">The prediction window for this match has ended.</p>
-      <p className="mt-1 text-sm text-slate-500">Please scan a valid QR code for another active prediction.</p>
-      <ResultSplit session={session} />
-    </div>
+    <Card className="shadow-2xl">
+      <CardContent className="py-8 text-center">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-muted"><AlarmClock className="size-8 text-muted-foreground" /></div>
+        <h2 className="mt-4 text-xl font-bold">Prediction closed</h2>
+        <p className="mt-2 text-muted-foreground">The prediction window for this match has ended.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Please scan a valid QR code for another active prediction.</p>
+        <ResultSplit session={session} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -225,99 +239,97 @@ function ResultCard({ session }: { session: PublicSession }) {
   const w = session.winners;
   const outcomeText = f.winningOutcome === "DRAW" ? "The match ended in a draw" : `${f.winningOutcome === "HOME" ? session.match.homeTeam : session.match.awayTeam} won`;
   return (
-    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
-      <div className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Final result</div>
-      <div className="mt-2 text-2xl font-black">
-        {session.match.homeTeam} {f.homeScore} - {f.awayScore} {session.match.awayTeam}
-      </div>
-      <div className="mt-1 text-slate-600">{outcomeText}</div>
+    <Card className="shadow-2xl">
+      <CardContent className="py-6 text-center">
+        <div className="text-xs font-semibold uppercase tracking-widest text-primary">Final result</div>
+        <div className="mt-2 text-2xl font-black tracking-tight">
+          {session.match.homeTeam} {f.homeScore} - {f.awayScore} {session.match.awayTeam}
+        </div>
+        <div className="mt-1 text-muted-foreground">{outcomeText}</div>
 
-      {w ? (
-        <div className="mt-5 space-y-4">
-          {w.scoreWinner && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <div className="text-3xl">🏆</div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Winner</div>
-              <div className="mt-1 text-2xl font-black text-amber-900">{w.scoreWinner.name}</div>
-              <div className="mt-1 text-sm text-amber-900">
-                {w.scoreWinner.maskedMobile}
-                {w.scoreWinner.predictedScore && <> · predicted {w.scoreWinner.predictedScore}</>}
-                {" · "}
-                {w.scoreWinner.submittedLabel}
+        {w ? (
+          <div className="mt-6 space-y-5">
+            {w.scoreWinner && (
+              <div className="rounded-2xl border border-amber-300/70 bg-gradient-to-b from-amber-50 to-amber-100/60 p-5 dark:from-amber-950/40 dark:to-amber-900/20">
+                <Trophy className="mx-auto size-9 text-amber-500" />
+                <div className="mt-1 text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-200">Winner</div>
+                <div className="mt-1 text-2xl font-black text-amber-950 dark:text-amber-50">{w.scoreWinner.name}</div>
+                <div className="mt-1 text-sm text-amber-900/80 dark:text-amber-100/80">
+                  {w.scoreWinner.maskedMobile}
+                  {w.scoreWinner.predictedScore && <> · predicted {w.scoreWinner.predictedScore}</>}
+                  {" · "}
+                  {w.scoreWinner.submittedLabel}
+                </div>
+                {w.count > 1 && <div className="mt-2 text-xs text-amber-800/80 dark:text-amber-200/80">Drawn at random from {w.count} exact-score predictions.</div>}
               </div>
-              {w.count > 1 && (
-                <div className="mt-2 text-xs text-amber-800">Drawn at random from {w.count} exact-score predictions.</div>
+            )}
+            <div>
+              <div className="text-sm font-semibold">
+                {w.count === 0
+                  ? session.enableScorePrediction ? "Nobody predicted the exact score." : "Nobody predicted the result."
+                  : session.enableScorePrediction
+                    ? `${w.count} participant${w.count === 1 ? "" : "s"} predicted the exact score`
+                    : `${w.count} participant${w.count === 1 ? "" : "s"} predicted correctly`}
+              </div>
+              {w.names.length > 0 && (
+                <ul className="mt-2 flex flex-wrap justify-center gap-1.5">
+                  {w.names.map((n, i) => (
+                    <li key={`${n}-${i}`}><Badge variant="secondary" className="h-6 px-2.5 text-xs">{n}</Badge></li>
+                  ))}
+                  {w.count > w.names.length && <li className="px-2 py-1 text-xs text-muted-foreground">and {w.count - w.names.length} more</li>}
+                </ul>
               )}
             </div>
-          )}
-          <div>
-            <div className="text-sm font-semibold text-slate-700">
-              {w.count === 0
-                ? session.enableScorePrediction
-                  ? "Nobody predicted the exact score."
-                  : "Nobody predicted the result."
-                : session.enableScorePrediction
-                  ? `${w.count} participant${w.count === 1 ? "" : "s"} predicted the exact score`
-                  : `${w.count} participant${w.count === 1 ? "" : "s"} predicted correctly`}
-            </div>
-            {w.names.length > 0 && (
-              <ul className="mt-2 flex flex-wrap justify-center gap-1.5">
-                {w.names.map((n, i) => (
-                  <li key={`${n}-${i}`} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{n}</li>
-                ))}
-                {w.count > w.names.length && <li className="px-2 py-1 text-xs text-slate-500">and {w.count - w.names.length} more</li>}
-              </ul>
-            )}
           </div>
-        </div>
-      ) : (
-        <p className="mt-4 text-sm text-slate-500">Winners are notified on WhatsApp.</p>
-      )}
-      <ResultSplit session={session} />
-      <p className="mt-5 text-xs text-slate-500">Thank you for participating!</p>
-    </div>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground">Winners are notified on WhatsApp.</p>
+        )}
+        <ResultSplit session={session} />
+        <p className="mt-6 text-xs text-muted-foreground">Thank you for participating!</p>
+      </CardContent>
+    </Card>
   );
 }
 
 function TimeOutCard({ session }: { session: PublicSession }) {
   return (
-    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
-      <div className="text-4xl">⏰</div>
-      <h2 className="mt-3 text-xl font-bold">Prediction Time Over</h2>
-      <p className="mt-2 text-slate-600">The prediction window for this match has ended, so your prediction could not be counted.</p>
-      <div className="mt-4 text-lg font-bold">
-        {session.match.homeTeam} vs {session.match.awayTeam}
-      </div>
-      <p className="mt-3 text-slate-700">Thank you for your interest.</p>
-      <ResultSplit session={session} />
-    </div>
+    <Card className="shadow-2xl">
+      <CardContent className="py-8 text-center">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-destructive/10"><AlarmClock className="size-8 text-destructive" /></div>
+        <h2 className="mt-4 text-xl font-bold">Prediction time over</h2>
+        <p className="mt-2 text-muted-foreground">The prediction window for this match has ended, so your prediction could not be counted.</p>
+        <div className="mt-4 text-lg font-bold">{session.match.homeTeam} vs {session.match.awayTeam}</div>
+        <p className="mt-3 text-muted-foreground">Thank you for your interest.</p>
+        <ResultSplit session={session} />
+      </CardContent>
+    </Card>
   );
 }
 
 function SuccessCard({ session, predictedTeam, score }: { session: PublicSession; predictedTeam: string; score: string | null }) {
   return (
-    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-3xl">✅</div>
-      <h2 className="mt-3 text-xl font-bold">Prediction Submitted Successfully</h2>
-      <p className="mt-2 text-slate-600">Your prediction has been recorded.</p>
-      <div className="mt-4 text-lg font-bold">
-        {session.match.homeTeam} vs {session.match.awayTeam}
-      </div>
-      <div className="mt-3 text-sm text-slate-500">Your prediction:</div>
-      {score ? (
-        <>
-          <div className="text-3xl font-black text-emerald-700">{score}</div>
-          <div className="text-sm font-semibold text-slate-700">{predictedTeam === "Draw" ? "Draw" : `${predictedTeam} to win`}</div>
-        </>
-      ) : (
-        <div className="text-2xl font-black text-emerald-700">{predictedTeam}</div>
-      )}
-      <p className="mt-4 text-slate-600">Thank you for participating.</p>
-      <p className="mt-1 text-xs text-slate-500">
-        A WhatsApp confirmation will be sent to your number. After the match, the final score and the winner will be announced on WhatsApp and right here: scan the QR code again to see them.
-      </p>
-      <ResultSplit session={session} />
-    </div>
+    <Card className="shadow-2xl">
+      <CardContent className="py-8 text-center">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/15"><CheckCircle2 className="size-9 text-primary" /></div>
+        <h2 className="mt-4 text-xl font-bold">Prediction submitted</h2>
+        <p className="mt-1 text-muted-foreground">Your prediction has been recorded.</p>
+        <div className="mt-5 text-lg font-bold">{session.match.homeTeam} vs {session.match.awayTeam}</div>
+        <div className="mt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Your prediction</div>
+        {score ? (
+          <>
+            <div className="font-mono text-4xl font-black tabular-nums text-primary">{score}</div>
+            <div className="text-sm font-semibold">{predictedTeam === "Draw" ? "Draw" : `${predictedTeam} to win`}</div>
+          </>
+        ) : (
+          <div className="text-3xl font-black text-primary">{predictedTeam}</div>
+        )}
+        <p className="mt-5 text-muted-foreground">Thank you for participating.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          A WhatsApp confirmation will be sent to your number. After the match, the final score and the winner are announced on WhatsApp and right here: scan the QR code again to see them.
+        </p>
+        <ResultSplit session={session} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -325,6 +337,36 @@ type FormState = {
   fullName: string; mobile: string; email: string; consent: boolean; selectedOutcome: Outcome | "";
   predictedHomeScore: string; predictedAwayScore: string; customData: Record<string, string>;
 };
+
+function ScoreStepper({ team, value, onChange, error }: { team: string; value: string; onChange: (v: string) => void; error?: boolean }) {
+  const n = value === "" ? null : Number(value);
+  const step = (d: number) => onChange(String(Math.min(99, Math.max(0, (n ?? 0) + d))));
+  return (
+    <div className="flex-1 space-y-2 text-center">
+      <Label className="justify-center text-sm font-semibold">{team}</Label>
+      <div className="flex items-center gap-1.5">
+        <Button type="button" variant="outline" size="icon" aria-label={`Decrease ${team} score`} onClick={() => step(-1)} disabled={!n}>
+          <Minus />
+        </Button>
+        <Input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 2))}
+          placeholder="0"
+          aria-label={`${team} score`}
+          aria-invalid={error || undefined}
+          className="h-14 text-center font-mono text-3xl font-black tabular-nums"
+          required
+        />
+        <Button type="button" variant="outline" size="icon" aria-label={`Increase ${team} score`} onClick={() => step(1)}>
+          <Plus />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
   session: PublicSession;
@@ -338,7 +380,6 @@ function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
   const [busy, setBusy] = useState(false);
   const set = (k: keyof FormState, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const setCustom = (k: string, v: string) => setForm((f) => ({ ...f, customData: { ...f.customData, [k]: v } }));
-  const setScore = (k: "predictedHomeScore" | "predictedAwayScore", v: string) => set(k, v.replace(/\D/g, "").slice(0, 2));
 
   const options = useMemo(() => {
     const o: { value: Outcome; label: string }[] = [
@@ -354,15 +395,14 @@ function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
     setErrors({});
     setMessage(null);
     const details = { fullName: form.fullName, mobile: form.mobile, email: form.email, consent: form.consent || undefined, customData: form.customData };
-    const showFieldErrors = (e: ApiClientError) => {
+    const showFieldErrors = (err: ApiClientError) => {
       const mapped: Record<string, string> = {};
-      for (const [k, v] of Object.entries(e.details ?? {})) mapped[k.replace(/^customData\./, "")] = v;
+      for (const [k, v] of Object.entries(err.details ?? {})) mapped[k.replace(/^customData\./, "")] = v;
       setErrors(mapped);
       setMessage("Please check the highlighted fields.");
     };
     let selectedOutcome = form.selectedOutcome;
     if (session.enableScorePrediction) {
-      // Single question: the score. The winner follows from it (the server derives it again).
       if (form.predictedHomeScore === "" || form.predictedAwayScore === "") {
         setErrors({ predictedHomeScore: "Enter the score for both teams" });
         return;
@@ -409,102 +449,133 @@ function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
     }
   }
 
+  const err = (k: string) => (errors[k] ? <p className="text-xs text-destructive">{errors[k]}</p> : null);
+
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white p-5 shadow-xl" noValidate>
-      <h2 className="text-lg font-bold">Your details</h2>
-      <Field label="Full Name" required error={errors.fullName}>
-        <Input value={form.fullName} onChange={(e) => set("fullName", e.target.value)} autoComplete="name" maxLength={100} required />
-      </Field>
-      <Field label="Mobile Number" required error={errors.mobile} hint="Used for your WhatsApp confirmation">
-        <Input type="tel" inputMode="tel" value={form.mobile} onChange={(e) => set("mobile", e.target.value)} autoComplete="tel" maxLength={20} required />
-      </Field>
-      <Field label="Email Address" required error={errors.email}>
-        <Input type="email" inputMode="email" value={form.email} onChange={(e) => set("email", e.target.value)} autoComplete="email" maxLength={200} required />
-      </Field>
-      {session.fields.map((f) => (
-        <Field key={f.key} label={f.label} required={f.required} error={errors[f.key]}>
-          {f.type === "SELECT" ? (
-            <Select value={form.customData[f.key] ?? ""} onChange={(e) => setCustom(f.key, e.target.value)} required={f.required}>
-              <option value="">Select…</option>
-              {f.options.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </Select>
-          ) : (
-            <Input
-              type={f.type === "NUMBER" ? "number" : "text"}
-              inputMode={f.type === "NUMBER" ? "numeric" : undefined}
-              value={form.customData[f.key] ?? ""}
-              onChange={(e) => setCustom(f.key, e.target.value)}
-              required={f.required}
-              maxLength={500}
-            />
-          )}
-        </Field>
-      ))}
-
-      {!session.enableScorePrediction && (
-      <div>
-        <h2 className="text-lg font-bold">Who will win?</h2>
-        <div className="mt-2 grid gap-2" role="radiogroup" aria-label="Who will win?">
-          {options.map((o) => {
-            const selected = form.selectedOutcome === o.value;
-            return (
-              <button
-                type="button"
-                key={o.value}
-                role="radio"
-                aria-checked={selected}
-                onClick={() => set("selectedOutcome", o.value)}
-                className={`w-full rounded-xl border-2 px-4 py-3 text-left text-base font-semibold transition ${
-                  selected ? "border-emerald-600 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white hover:border-slate-400"
-                }`}
-              >
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-        {errors.selectedOutcome && <p className="mt-1 text-sm text-rose-600">{errors.selectedOutcome}</p>}
-      </div>
-      )}
-
-      {session.enableScorePrediction && (
-        <div>
-          <h2 className="text-lg font-bold">What will the final score be?</h2>
-          <div className="mt-2 flex items-end gap-3">
-            <label className="flex-1 text-center text-sm font-medium">
-              {session.match.homeTeam}
-              <Input type="text" inputMode="numeric" pattern="[0-9]*" value={form.predictedHomeScore} onChange={(e) => setScore("predictedHomeScore", e.target.value)} className="mt-1 text-center text-2xl font-bold" placeholder="0" required aria-label={`${session.match.homeTeam} score`} />
-            </label>
-            <span className="pb-3 text-2xl font-black text-slate-400">-</span>
-            <label className="flex-1 text-center text-sm font-medium">
-              {session.match.awayTeam}
-              <Input type="text" inputMode="numeric" pattern="[0-9]*" value={form.predictedAwayScore} onChange={(e) => setScore("predictedAwayScore", e.target.value)} className="mt-1 text-center text-2xl font-bold" placeholder="0" required aria-label={`${session.match.awayTeam} score`} />
-            </label>
+    <form onSubmit={submit} noValidate className="space-y-4">
+      <Card className="shadow-2xl">
+        <CardHeader>
+          <CardTitle>Your details</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="fullName">Full name</Label>
+            <Input id="fullName" value={form.fullName} onChange={(e) => set("fullName", e.target.value)} autoComplete="name" maxLength={100} required aria-invalid={!!errors.fullName || undefined} className="h-11" />
+            {err("fullName")}
           </div>
-          {(errors.predictedHomeScore || errors.predictedAwayScore || errors.selectedOutcome) && (
-            <p className="mt-1 text-sm text-rose-600">{errors.predictedHomeScore || errors.predictedAwayScore || errors.selectedOutcome}</p>
-          )}
-          <p className="mt-1 text-xs text-slate-500">
-            Only the exact score counts as a correct prediction. If several people get it right, one winner is drawn at random.
-          </p>
-        </div>
-      )}
+          <div className="space-y-1.5">
+            <Label htmlFor="mobile">Mobile number</Label>
+            <Input id="mobile" type="tel" inputMode="tel" value={form.mobile} onChange={(e) => set("mobile", e.target.value)} autoComplete="tel" maxLength={20} required aria-invalid={!!errors.mobile || undefined} className="h-11" />
+            {err("mobile") ?? <p className="text-xs text-muted-foreground">Used for your WhatsApp confirmation</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email address</Label>
+            <Input id="email" type="email" inputMode="email" value={form.email} onChange={(e) => set("email", e.target.value)} autoComplete="email" maxLength={200} required aria-invalid={!!errors.email || undefined} className="h-11" />
+            {err("email")}
+          </div>
+          {session.fields.map((f) => (
+            <div key={f.key} className="space-y-1.5">
+              <Label htmlFor={`f-${f.key}`}>
+                {f.label}
+                {!f.required && <span className="font-normal text-muted-foreground"> (optional)</span>}
+              </Label>
+              {f.type === "SELECT" ? (
+                <Select
+                  value={form.customData[f.key] || null}
+                  onValueChange={(v) => setCustom(f.key, (v as string | null) ?? "")}
+                  items={Object.fromEntries(f.options.map((o) => [o, o]))}
+                >
+                  <SelectTrigger id={`f-${f.key}`} className="h-11 w-full" aria-invalid={!!errors[f.key] || undefined}>
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {f.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id={`f-${f.key}`}
+                  type={f.type === "NUMBER" ? "number" : "text"}
+                  inputMode={f.type === "NUMBER" ? "numeric" : undefined}
+                  value={form.customData[f.key] ?? ""}
+                  onChange={(e) => setCustom(f.key, e.target.value)}
+                  required={f.required}
+                  maxLength={500}
+                  aria-invalid={!!errors[f.key] || undefined}
+                  className="h-11"
+                />
+              )}
+              {err(f.key)}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
-      <p className="text-xs text-slate-500">
-        We use your details only to record your prediction and to send you WhatsApp updates about this match. They are never shown publicly.
-      </p>
-      {session.requireConsent && (
-        <div>
-          <Checkbox checked={form.consent} onChange={(e) => set("consent", e.target.checked)} label="I agree to the use of my details for this prediction and related WhatsApp messages." />
-          {errors.consent && <p className="mt-1 text-sm text-rose-600">{errors.consent}</p>}
-        </div>
-      )}
-      {message && <Alert>{message}</Alert>}
-      <Button type="submit" disabled={busy} className="w-full py-3 text-base">
-        {busy ? "Submitting…" : "Submit Prediction"}
-      </Button>
+      <Card className="shadow-2xl">
+        <CardHeader>
+          <CardTitle>{session.enableScorePrediction ? "What will the final score be?" : "Who will win?"}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {session.enableScorePrediction ? (
+            <>
+              <div className="flex items-end gap-3">
+                <ScoreStepper team={session.match.homeTeam} value={form.predictedHomeScore} onChange={(v) => set("predictedHomeScore", v)} error={!!errors.predictedHomeScore} />
+                <div className="pb-4 text-2xl font-black text-muted-foreground">–</div>
+                <ScoreStepper team={session.match.awayTeam} value={form.predictedAwayScore} onChange={(v) => set("predictedAwayScore", v)} error={!!errors.predictedAwayScore} />
+              </div>
+              {err("predictedHomeScore") ?? err("predictedAwayScore") ?? err("selectedOutcome")}
+              <p className="text-xs text-muted-foreground">Only the exact score counts as a correct prediction. If several people get it right, one winner is drawn at random.</p>
+            </>
+          ) : (
+            <>
+              <ToggleGroup
+                value={form.selectedOutcome ? [form.selectedOutcome] : []}
+                onValueChange={(v) => set("selectedOutcome", ((v as string[])[0] as Outcome | undefined) ?? "")}
+                aria-label="Who will win?"
+                className="grid w-full grid-cols-1 gap-2"
+              >
+                {options.map((o) => (
+                  <ToggleGroupItem
+                    key={o.value}
+                    value={o.value}
+                    className={cn(
+                      "h-14 w-full justify-start rounded-xl border-2 border-border bg-background px-4 text-base font-semibold",
+                      "data-pressed:border-primary data-pressed:bg-primary/10 data-pressed:text-primary hover:bg-muted",
+                    )}
+                  >
+                    <span className={cn("mr-3 flex size-5 items-center justify-center rounded-full border-2", form.selectedOutcome === o.value ? "border-primary bg-primary" : "border-muted-foreground/40")}>
+                      {form.selectedOutcome === o.value && <CheckCircle2 className="size-4 text-primary-foreground" />}
+                    </span>
+                    {o.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {err("selectedOutcome")}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-2xl">
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            We use your details only to record your prediction and to send you WhatsApp updates about this match. They are never shown publicly.
+          </p>
+          {session.requireConsent && (
+            <div className="space-y-1.5">
+              <label className="flex items-start gap-2.5 text-sm">
+                <Checkbox checked={form.consent} onCheckedChange={(c) => set("consent", c === true)} className="mt-0.5" />
+                <span>I agree to the use of my details for this prediction and related WhatsApp messages.</span>
+              </label>
+              {err("consent")}
+            </div>
+          )}
+          {message && <Alert variant="destructive"><AlertDescription>{message}</AlertDescription></Alert>}
+          <Button type="submit" size="lg" disabled={busy} className="h-12 w-full text-base">
+            {busy ? "Submitting…" : "Submit prediction"}
+          </Button>
+        </CardContent>
+      </Card>
     </form>
   );
 }

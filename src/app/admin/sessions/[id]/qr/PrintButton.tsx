@@ -1,6 +1,11 @@
 "use client";
-import { Button } from "@/components/ui";
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function PrintButton() {
-  return <Button variant="secondary" onClick={() => window.print()}>Print QR</Button>;
+  return (
+    <Button variant="outline" onClick={() => window.print()}>
+      <Printer data-icon="inline-start" /> Print
+    </Button>
+  );
 }

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { PageHeader } from "@/components/admin/page-header";
 import { MatchForm } from "../../MatchForm";
 import { toInputValue } from "@/components/datetime";
 
@@ -10,8 +11,8 @@ export default async function EditMatchPage({ params }: { params: Promise<{ id: 
   const m = await prisma.match.findUnique({ where: { id } });
   if (!m) notFound();
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-2xl font-bold">Edit match</h1>
+    <div className="mx-auto max-w-3xl">
+      <PageHeader title="Edit match" description={`${m.homeTeam} vs ${m.awayTeam}`} />
       <MatchForm
         id={m.id}
         initial={{

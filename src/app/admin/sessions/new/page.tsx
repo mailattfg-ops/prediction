@@ -1,7 +1,10 @@
+import Link from "next/link";
+import { Plus } from "lucide-react";
 import { listMatches } from "@/lib/matches";
 import { fmtDateTime } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/admin/page-header";
 import { SessionForm } from "../SessionForm";
-import { LinkButton } from "@/components/ui";
 
 export const metadata = { title: "New session · Prediction Admin" };
 
@@ -9,11 +12,14 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
   const { matchId } = await searchParams;
   const matches = (await listMatches()).map((m) => ({ id: m.id, label: `${m.homeTeam} vs ${m.awayTeam} · ${fmtDateTime(m.kickoffAt)}` }));
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
-      <h1 className="text-2xl font-bold">New prediction session</h1>
+    <div className="mx-auto max-w-4xl">
+      <PageHeader title="New prediction session" description="One session = one QR code = one prediction window." />
       {matches.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
-          Create a match first. <LinkButton href="/admin/matches/new" variant="primary" className="ml-2">+ New match</LinkButton>
+        <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+          Create a match first.
+          <div className="mt-3">
+            <Button nativeButton={false} render={<Link href="/admin/matches/new" />}><Plus data-icon="inline-start" /> New match</Button>
+          </div>
         </div>
       ) : (
         <SessionForm matches={matches} defaultMatchId={matchId} />

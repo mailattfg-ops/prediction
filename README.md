@@ -15,6 +15,7 @@ QR scan → match + countdown → name / mobile / email (+ custom fields) → pi
 | Layer | Choice |
 |---|---|
 | App | Next.js 16 (App Router, TypeScript), Tailwind CSS 4 |
+| UI | shadcn/ui components on Base UI primitives (`src/components/ui`), lucide-react icons, recharts charts, sonner toasts, canvas-confetti |
 | Database | PostgreSQL + Prisma 6 |
 | Auth | bcrypt password hashing, HS256 JWT (`jose`) in an httpOnly cookie, roles `SUPER_ADMIN` / `ADMIN` |
 | Validation | zod (server-side, every input) |

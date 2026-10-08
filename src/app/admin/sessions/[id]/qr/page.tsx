@@ -1,7 +1,13 @@
+import Link from "next/link";
+import { ArrowLeft, Download, TriangleAlert } from "lucide-react";
 import { getSession } from "@/lib/sessions";
 import { fmtDateTime } from "@/lib/format";
 import { predictionUrl, qrDataUrl } from "@/lib/qr";
-import { Alert, Card, LinkButton, StatusBadge } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PageHeader } from "@/components/admin/page-header";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { PrintButton } from "./PrintButton";
 
 export const metadata = { title: "QR code · Prediction Admin" };
@@ -15,44 +21,52 @@ export default async function QrPage({ params }: { params: Promise<{ id: string 
   const localOnly = /localhost|127\.0\.0\.1/.test(url);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      {localOnly && (
-        <div className="no-print">
-          <Alert>
-            This QR points to <code>{url}</code>, which only works on this computer. Set <code>APP_URL</code> in <code>.env</code> to an
-            address phones can reach (your LAN IP, a tunnel, or the deployed https URL), restart the app and download the QR again.
+    <div className="mx-auto max-w-4xl">
+      <div className="no-print">
+        <PageHeader
+          title="QR code"
+          description={title}
+          badge={<StatusBadge status={s.effectiveStatus} />}
+          actions={
+            <>
+              <Button nativeButton={false} render={<a href={`/api/sessions/${s.id}/qr?format=png`} />}><Download data-icon="inline-start" /> PNG</Button>
+              <Button nativeButton={false} variant="outline" render={<a href={`/api/sessions/${s.id}/qr?format=svg`} />}><Download data-icon="inline-start" /> SVG</Button>
+              <PrintButton />
+              <Button nativeButton={false} variant="ghost" render={<Link href={`/admin/sessions/${s.id}`} />}><ArrowLeft data-icon="inline-start" /> Back</Button>
+            </>
+          }
+        />
+        {localOnly && (
+          <Alert variant="destructive" className="mb-4">
+            <TriangleAlert />
+            <AlertTitle>This QR only works on this computer</AlertTitle>
+            <AlertDescription>
+              It points to <code>{url}</code>. Set <code>APP_URL</code> in <code>.env</code> to an address phones can reach (your LAN IP, a tunnel, or the deployed https URL), restart the app and download the QR again.
+            </AlertDescription>
           </Alert>
-        </div>
-      )}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">QR code · {title}</h1>
-        <div className="flex flex-wrap gap-2">
-          <a href={`/api/sessions/${s.id}/qr?format=png`} className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Download PNG</a>
-          <a href={`/api/sessions/${s.id}/qr?format=svg`} className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50">Download SVG</a>
-          <PrintButton />
-          <LinkButton href={`/admin/sessions/${s.id}`}>Back</LinkButton>
-        </div>
+        )}
       </div>
       <Card className="print:border-0 print:shadow-none">
-        <div className="grid gap-6 md:grid-cols-2 md:items-center">
+        <CardContent className="grid gap-8 md:grid-cols-2 md:items-center">
           <div className="text-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={dataUrl} alt={`QR code for ${title}`} className="mx-auto w-full max-w-xs print:max-w-md" />
-            <div className="mt-2 text-lg font-bold print:text-2xl">Scan to predict</div>
-            <div className="text-xl font-black print:text-3xl">{title}</div>
-            {(s.eventName || s.campaignName) && <div className="text-sm text-slate-600">{[s.eventName, s.campaignName].filter(Boolean).join(" · ")}</div>}
-            <div className="mt-1 break-all text-xs text-slate-500">{url}</div>
+            <div className="mx-auto w-full max-w-xs rounded-2xl border bg-white p-4 print:max-w-md print:border-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={dataUrl} alt={`QR code for ${title}`} className="w-full" />
+            </div>
+            <div className="mt-4 text-sm font-semibold uppercase tracking-widest text-primary print:text-xl">Scan to predict</div>
+            <div className="text-2xl font-black print:text-4xl">{title}</div>
+            {(s.eventName || s.campaignName) && <div className="text-sm text-muted-foreground">{[s.eventName, s.campaignName].filter(Boolean).join(" · ")}</div>}
+            <div className="mt-2 break-all text-xs text-muted-foreground">{url}</div>
           </div>
-          <dl className="no-print grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-slate-500">Status</dt><dd><StatusBadge status={s.effectiveStatus} /></dd>
-            <dt className="text-slate-500">Match</dt><dd>{title}{s.match.competition && ` · ${s.match.competition}`}</dd>
-            <dt className="text-slate-500">Kick-off</dt><dd>{fmtDateTime(s.match.kickoffAt)}</dd>
-            <dt className="text-slate-500">Prediction opens</dt><dd>{fmtDateTime(s.startTime)}</dd>
-            <dt className="text-slate-500">Prediction closes</dt><dd>{fmtDateTime(s.expiryTime)} ({s.durationMinutes} min)</dd>
-            <dt className="text-slate-500">Draw allowed</dt><dd>{s.allowDraw ? "Yes" : "No"}</dd>
-            <dt className="text-slate-500">Total predictions</dt><dd className="font-semibold">{s._count.predictions}</dd>
+          <dl className="no-print grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-sm">
+            <dt className="text-muted-foreground">Match</dt><dd>{title}{s.match.competition && ` · ${s.match.competition}`}</dd>
+            <dt className="text-muted-foreground">Kick-off</dt><dd>{fmtDateTime(s.match.kickoffAt)}</dd>
+            <dt className="text-muted-foreground">Prediction opens</dt><dd>{fmtDateTime(s.startTime)}</dd>
+            <dt className="text-muted-foreground">Prediction closes</dt><dd>{fmtDateTime(s.expiryTime)} ({s.durationMinutes} min)</dd>
+            <dt className="text-muted-foreground">Mode</dt><dd>{s.enableScorePrediction ? "Exact score" : "Winner pick"}{s.allowDraw ? " · draw allowed" : ""}</dd>
+            <dt className="text-muted-foreground">Predictions</dt><dd className="font-semibold tabular-nums">{s._count.predictions}</dd>
           </dl>
-        </div>
+        </CardContent>
       </Card>
     </div>
   );

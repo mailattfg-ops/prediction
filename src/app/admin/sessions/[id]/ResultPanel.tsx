@@ -1,9 +1,17 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Calculator, CheckCircle2, Lock, Trophy } from "lucide-react";
 import { api, ApiClientError } from "@/components/api";
-import { Modal } from "@/components/Modal";
-import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Outcome = "HOME" | "AWAY" | "DRAW";
 type Result = { homeScore: number; awayScore: number; winningOutcome: Outcome; resultStatus: "PENDING" | "FINAL"; version: number; finalizedLabel: string | null } | null;
@@ -21,7 +29,7 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, stats, canc
   const label = (o: Outcome) => (o === "HOME" ? homeTeam : o === "AWAY" ? awayTeam : "Draw");
   const [home, setHome] = useState(result?.homeScore ?? 0);
   const [away, setAway] = useState(result?.awayScore ?? 0);
-  const [override, setOverride] = useState<"" | Outcome>("");
+  const [override, setOverride] = useState<"AUTO" | Outcome>("AUTO");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,113 +46,163 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, stats, canc
       setBusy(false);
     }
   }
-  const body = () => ({ homeScore: home, awayScore: away, winningOutcome: override || undefined });
+  const body = () => ({ homeScore: home, awayScore: away, winningOutcome: override === "AUTO" ? undefined : override });
 
   if (cancelled) return null;
 
   if (result?.resultStatus === "FINAL") {
     const winPct = stats.total ? Math.round((stats.winners / stats.total) * 1000) / 10 : 0;
     return (
-      <Card className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Match Result</h2>
-          <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">Result Finalized</span>
-        </div>
-        <div className="text-2xl font-bold">
-          {homeTeam} {result.homeScore} - {result.awayScore} {awayTeam}
-        </div>
-        <div className="text-sm text-slate-600">
-          Winning outcome: <strong>{label(result.winningOutcome)}</strong>
-          {result.finalizedLabel && <> · finalized {result.finalizedLabel}</>}
-        </div>
-        <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[["Total predictions", stats.total], ["Winners", stats.winners], ["Losers", stats.losers], ["Winning percentage", `${winPct}%`]].map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs text-slate-500">{k}</dt><dd className="text-xl font-bold">{v}</dd></div>
-          ))}
-        </dl>
-        {stats.scoreEnabled && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            🏆 In this session only exact scores count as winners: <strong>{stats.scoreCorrect}</strong> participant(s).{" "}
-            {stats.scoreWinnerName ? <>Score-prize winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score-prize winner."}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2"><CheckCircle2 className="size-4 text-primary" /> Match result</CardTitle>
+            <Badge variant="secondary" className="bg-violet-500/15 text-violet-700"><Lock /> Result finalized</Badge>
           </div>
-        )}
-        <p className="text-xs text-slate-500">Finalized results are permanent and cannot be changed.</p>
+          <CardDescription>
+            Winning outcome <strong className="text-foreground">{label(result.winningOutcome)}</strong>
+            {result.finalizedLabel && <> · finalized {result.finalizedLabel}</>}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-3xl font-black tracking-tight tabular-nums">
+            {homeTeam} {result.homeScore} - {result.awayScore} {awayTeam}
+          </div>
+          <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {[["Total predictions", stats.total], ["Winners", stats.winners], ["Losers", stats.losers], ["Winning percentage", `${winPct}%`]].map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-muted/60 p-3"><dt className="text-xs text-muted-foreground">{k}</dt><dd className="text-xl font-bold tabular-nums">{v}</dd></div>
+            ))}
+          </dl>
+          {stats.scoreEnabled && (
+            <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <Trophy />
+              <AlertTitle>Exact-score session</AlertTitle>
+              <AlertDescription>
+                Only exact scores count as winners: {stats.scoreCorrect} participant(s).{" "}
+                {stats.scoreWinnerName ? <>Score-prize winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score-prize winner."}
+              </AlertDescription>
+            </Alert>
+          )}
+          <p className="text-xs text-muted-foreground">Finalized results are permanent and cannot be changed.</p>
+        </CardContent>
       </Card>
     );
   }
 
+  const outcomeItems = { AUTO: "Auto (from score)", HOME: homeTeam, AWAY: awayTeam, DRAW: "Draw" };
+
   return (
-    <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Enter Match Result</h2>
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label={homeTeam}><Input type="number" min={0} max={99} value={home} onChange={(e) => setHome(Number(e.target.value))} className="w-24 text-center text-xl font-bold" /></Field>
-        <div className="pb-3 font-bold text-slate-400">VS</div>
-        <Field label={awayTeam}><Input type="number" min={0} max={99} value={away} onChange={(e) => setAway(Number(e.target.value))} className="w-24 text-center text-xl font-bold" /></Field>
-        <Field label="Official outcome" hint="Leave on Auto unless an official ruling differs from the score">
-          <Select value={override} onChange={(e) => setOverride(e.target.value as "" | Outcome)}>
-            <option value="">Auto (from score)</option>
-            <option value="HOME">{homeTeam}</option>
-            <option value="AWAY">{awayTeam}</option>
-            <option value="DRAW">Draw</option>
-          </Select>
-        </Field>
-        <Button disabled={busy} onClick={() => call(() => api<Preview>(`/api/sessions/${sessionId}/result/preview`, { method: "POST", body: body() }), setPreview)}>
-          Calculate Winners
-        </Button>
-      </div>
-      {error && <Alert>{error}</Alert>}
-      <Modal open={!!preview} title="Confirm match result" onClose={() => setPreview(null)}>
-        {preview && (
-          <div className="space-y-3">
-            <p className="text-lg font-semibold">
-              {preview.winningOutcome === "DRAW"
-                ? `${homeTeam} and ${awayTeam} drew ${preview.homeScore}-${preview.awayScore}.`
-                : `${label(preview.winningOutcome)} won ${preview.winningOutcome === "HOME" ? `${preview.homeScore}-${preview.awayScore}` : `${preview.awayScore}-${preview.homeScore}`}.`}
-            </p>
-            {preview.scoreEnabled ? (
-              <p className="text-slate-700">
-                Only participants who predicted the exact score <strong>{preview.homeScore}-{preview.awayScore}</strong> will be marked as winners. Predicting the right team with a different score counts as lost.
-              </p>
-            ) : (
-              <p className="text-slate-700">All participants who predicted <strong>{label(preview.winningOutcome)}</strong> will be marked as winners.</p>
-            )}
-            <p className="text-xs text-slate-500">Numbers below are for this session only.</p>
-            {preview.overridden && <Alert>You overrode the automatic outcome ({label(preview.autoOutcome)}). Make sure this matches the official ruling.</Alert>}
-            <dl className="grid grid-cols-3 gap-2 text-center">
-              {[["Predictions", preview.total], ["Winners", preview.winners], ["Losers", preview.losers]].map(([k, v]) => (
-                <div key={k} className="rounded-lg bg-slate-50 p-2"><dt className="text-xs text-slate-500">{k}</dt><dd className="text-xl font-bold">{v}</dd></div>
-              ))}
-            </dl>
-            {preview.otherSessions.length > 0 && (
-              <Alert kind="info">
-                The result belongs to the match, so it will also be applied to {preview.otherSessions.length} other session(s) of this match:{" "}
-                {preview.otherSessions.map((s) => `${s.label} (${s.predictions} prediction${s.predictions === 1 ? "" : "s"})`).join(", ")}.
-              </Alert>
-            )}
-            {preview.scoreEnabled && (
-              <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">
-                🏆 Exact score {preview.homeScore}-{preview.awayScore} predicted by <strong>{preview.exactScoreCount}</strong> participant(s).{" "}
-                {preview.exactScoreCount > 1
-                  ? "They are the winners; one of them will be drawn at random as the score-prize winner when you confirm (cryptographically secure draw, recorded in the audit log)."
-                  : preview.exactScoreCount === 1
-                    ? "That participant is the only winner and becomes the score-prize winner when you confirm."
-                    : "Nobody wins in this session."}
-              </p>
-            )}
-            <p className="text-xs text-slate-500">
-              Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications.{" "}
-              <strong>This is permanent and cannot be undone.</strong>
-            </p>
-            {error && <Alert>{error}</Alert>}
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setPreview(null)}>Cancel</Button>
-              <Button disabled={busy} onClick={() => call(() => api(`/api/sessions/${sessionId}/result`, { method: "POST", body: body() }), () => { setPreview(null); router.refresh(); })}>
-                Confirm Result
-              </Button>
-            </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Trophy className="size-4 text-primary" /> Enter match result</CardTitle>
+        <CardDescription>Type the final score, calculate the winners, then confirm. Finalizing is permanent.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="home-score">{homeTeam}</Label>
+            <Input id="home-score" type="number" min={0} max={99} value={home} onChange={(e) => setHome(Number(e.target.value))} className="h-14 w-24 text-center text-2xl font-black tabular-nums" />
           </div>
-        )}
-      </Modal>
+          <div className="pb-4 text-xl font-black text-muted-foreground">–</div>
+          <div className="space-y-2">
+            <Label htmlFor="away-score">{awayTeam}</Label>
+            <Input id="away-score" type="number" min={0} max={99} value={away} onChange={(e) => setAway(Number(e.target.value))} className="h-14 w-24 text-center text-2xl font-black tabular-nums" />
+          </div>
+          <div className="space-y-2">
+            <Label>Official outcome</Label>
+            <Select value={override} onValueChange={(v) => setOverride((v as "AUTO" | Outcome) ?? "AUTO")} items={outcomeItems}>
+              <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AUTO">Auto (from score)</SelectItem>
+                <SelectItem value="HOME">{homeTeam}</SelectItem>
+                <SelectItem value="AWAY">{awayTeam}</SelectItem>
+                <SelectItem value="DRAW">Draw</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Leave on Auto unless an official ruling differs.</p>
+          </div>
+          <Button size="lg" disabled={busy} onClick={() => call(() => api<Preview>(`/api/sessions/${sessionId}/result/preview`, { method: "POST", body: body() }), setPreview)}>
+            <Calculator data-icon="inline-start" /> Calculate winners
+          </Button>
+        </div>
+        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      </CardContent>
+
+      <Dialog open={!!preview} onOpenChange={(o) => !o && !busy && setPreview(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {preview && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Confirm match result</DialogTitle>
+                <DialogDescription>
+                  {preview.winningOutcome === "DRAW"
+                    ? `${homeTeam} and ${awayTeam} drew ${preview.homeScore}-${preview.awayScore}.`
+                    : `${label(preview.winningOutcome)} won ${preview.winningOutcome === "HOME" ? `${preview.homeScore}-${preview.awayScore}` : `${preview.awayScore}-${preview.homeScore}`}.`}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                {preview.scoreEnabled ? (
+                  <p>Only participants who predicted the exact score <strong>{preview.homeScore}-{preview.awayScore}</strong> will be marked as winners. The right team with a different score counts as lost.</p>
+                ) : (
+                  <p>All participants who predicted <strong>{label(preview.winningOutcome)}</strong> will be marked as winners.</p>
+                )}
+                {preview.overridden && (
+                  <Alert variant="destructive"><AlertDescription>You overrode the automatic outcome ({label(preview.autoOutcome)}). Make sure this matches the official ruling.</AlertDescription></Alert>
+                )}
+                <dl className="grid grid-cols-3 gap-2 text-center">
+                  {[["Predictions", preview.total], ["Winners", preview.winners], ["Losers", preview.losers]].map(([k, v]) => (
+                    <div key={k} className="rounded-lg bg-muted/60 p-2"><dt className="text-xs text-muted-foreground">{k}</dt><dd className="text-xl font-bold tabular-nums">{v}</dd></div>
+                  ))}
+                </dl>
+                <p className="text-xs text-muted-foreground">Numbers are for this session only.</p>
+                {preview.otherSessions.length > 0 && (
+                  <Alert>
+                    <AlertDescription>
+                      The result belongs to the match, so it is also applied to {preview.otherSessions.length} other session(s):{" "}
+                      {preview.otherSessions.map((s) => `${s.label} (${s.predictions})`).join(", ")}.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {preview.scoreEnabled && (
+                  <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                    <Trophy />
+                    <AlertDescription>
+                      Exact score predicted by <strong>{preview.exactScoreCount}</strong> participant(s).{" "}
+                      {preview.exactScoreCount > 1
+                        ? "One of them is drawn at random as the score-prize winner when you confirm (cryptographically secure draw, recorded in the audit log)."
+                        : preview.exactScoreCount === 1
+                          ? "That participant is the only winner and becomes the score-prize winner."
+                          : "Nobody wins in this session."}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications. <strong>This is permanent.</strong>
+                </p>
+                {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPreview(null)} disabled={busy}>Cancel</Button>
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    call(
+                      () => api(`/api/sessions/${sessionId}/result`, { method: "POST", body: body() }),
+                      () => {
+                        setPreview(null);
+                        toast.success("Result finalized. Winners marked and notifications queued.");
+                        router.refresh();
+                      },
+                    )
+                  }
+                >
+                  <CheckCircle2 data-icon="inline-start" /> {busy ? "Finalizing…" : "Confirm result"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
