@@ -199,8 +199,13 @@ npm run dev                     # http://localhost:3000/admin
 npm run worker                  # second terminal: sends queued WhatsApp messages (dry run by default)
 ```
 
-Default admin: `admin@example.com` / `ChangeMe123!` (from `SEED_ADMIN_*` in `.env`). Change it before
-going live.
+The super admin is created from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` in `.env`.
+To add an admin or change a login later (no re-seeding needed):
+
+```bash
+npm run admin:set -- admin@example.com "new-password" "Admin Name" SUPER_ADMIN
+npm run admin:set -- new@example.com "new-password" "Admin Name" SUPER_ADMIN --replace old@example.com   # rename an account
+```
 
 **Testing on a phone.** The QR embeds `APP_URL`, so set it to an address the phone can reach, for example
 your PC's Wi-Fi IP and port (`http://192.168.1.20:3000`), a Tailscale address, or a tunnel URL. The phone
@@ -218,6 +223,7 @@ Useful scripts:
 | `npm test` | unit tests, plus integration tests when `DATABASE_URL` is set |
 | `npm run typecheck` / `npm run lint` | TypeScript and ESLint |
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:studio` | Prisma migrations, production migrate, seed, data browser |
+| `npm run admin:set -- <email> <password> [name] [role] [--replace old]` | create, update or rename an admin login |
 
 ## 7. Configuration (.env)
 
@@ -372,7 +378,8 @@ too; use the cron route instead of the worker.
    (PM2: `pm2 start npm --name worker -- run worker`). On Vercel, schedule
    `POST /api/jobs/notifications` every minute with the `Authorization: Bearer $CRON_SECRET` header.
 6. Serve over HTTPS (required for secure cookies and for phones to trust the QR link).
-7. Change the seeded admin password by re-running the seed with new `SEED_ADMIN_*` values.
+7. Set a strong admin password with `npm run admin:set -- <email> <password> "<name>"` (never commit real
+   passwords; `.env.example` only carries a placeholder).
 
 Docker: a `node:22-alpine` image running `npm ci && npm run build` then `npm start` works; the worker is
 the same image running `npm run worker`.

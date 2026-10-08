@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin:set": "node --env-file-if-exists=.env --import tsx scripts/set-admin.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
