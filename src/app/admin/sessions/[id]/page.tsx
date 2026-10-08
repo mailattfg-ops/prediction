@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { getAdmin } from "@/lib/auth";
 import { sessionStats } from "@/lib/sessions";
 import { notificationStats } from "@/lib/notifications/queue";
 import { fmtDateTime, pct } from "@/lib/format";
@@ -13,7 +12,7 @@ export const metadata = { title: "Session · Prediction Admin" };
 
 export default async function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [stats, notif, admin] = await Promise.all([sessionStats(id), notificationStats(id), getAdmin()]);
+  const [stats, notif] = await Promise.all([sessionStats(id), notificationStats(id)]);
   const s = stats.session;
   const m = s.match;
   const maxMinute = Math.max(1, ...stats.timeline);
@@ -82,7 +81,6 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
         homeTeam={m.homeTeam}
         awayTeam={m.awayTeam}
         cancelled={s.status === "CANCELLED"}
-        isSuperAdmin={admin?.role === "SUPER_ADMIN"}
         result={m.result ? { ...m.result, finalizedLabel: m.result.finalizedAt ? fmtDateTime(m.result.finalizedAt) : null } : null}
         stats={{
           total: stats.total, winners: stats.winners, losers: stats.losers, home: stats.home, away: stats.away, draw: stats.draw,

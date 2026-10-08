@@ -60,6 +60,7 @@ function toData(input: SessionInput) {
     status: input.status,
     allowDraw: input.allowDraw,
     showResultsToParticipants: input.showResultsToParticipants,
+    showWinnersToParticipants: input.showWinnersToParticipants,
     requireConsent: input.requireConsent,
     enableScorePrediction: input.enableScorePrediction,
     collectLateEntries: input.collectLateEntries,
@@ -141,6 +142,7 @@ export async function getPublicSession(token: string) {
   const now = await dbNow();
   const final = s.match.result?.resultStatus === "FINAL" ? s.match.result : null;
   const results = s.showResultsToParticipants ? await outcomeSplit(s.id) : null;
+  const winners = final && s.showWinnersToParticipants ? await publicWinners(s.id) : null;
   return {
     token,
     status: effectiveStatus(s, now),
@@ -167,6 +169,43 @@ export async function getPublicSession(token: string) {
     fields: s.fields.map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options, required: f.required })),
     results,
     finalScore: final ? { homeScore: final.homeScore, awayScore: final.awayScore, winningOutcome: final.winningOutcome } : null,
+    winners,
+  };
+}
+
+/** Masks a phone number for public display: "+919876543210" -> "+91••••••••10". */
+export const maskMobile = (m: string) => (m.length <= 5 ? m : m.slice(0, 3) + "•".repeat(m.length - 5) + m.slice(-2));
+
+/**
+ * Winner information shown on the participant page after finalization: names only (never mobile or
+ * email), plus the drawn score-prize winner with a masked number so they can recognise themselves.
+ */
+export async function publicWinners(sessionId: string) {
+  const [count, winners, scoreWinner] = await Promise.all([
+    prisma.prediction.count({ where: { sessionId, resultStatus: "WINNER" } }),
+    prisma.prediction.findMany({
+      where: { sessionId, resultStatus: "WINNER" },
+      select: { participant: { select: { fullName: true } } },
+      orderBy: { submittedAt: "asc" },
+      take: 50,
+    }),
+    prisma.prediction.findFirst({
+      where: { sessionId, scoreWinner: true },
+      select: { predictedHomeScore: true, predictedAwayScore: true, submittedAt: true, participant: { select: { fullName: true, mobile: true } } },
+    }),
+  ]);
+  return {
+    count,
+    names: winners.map((w) => w.participant.fullName),
+    scoreWinner: scoreWinner
+      ? {
+          name: scoreWinner.participant.fullName,
+          maskedMobile: maskMobile(scoreWinner.participant.mobile),
+          predictedScore: scoreWinner.predictedHomeScore == null ? null : `${scoreWinner.predictedHomeScore} - ${scoreWinner.predictedAwayScore}`,
+          submittedAt: scoreWinner.submittedAt.toISOString(),
+          submittedLabel: fmtDateTime(scoreWinner.submittedAt),
+        }
+      : null,
   };
 }
 

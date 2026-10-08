@@ -21,6 +21,7 @@ export default async function EditSessionPage({ params }: { params: Promise<{ id
         initial={{
           matchId: s.matchId, startTime: toInputValue(s.startTime.toISOString()), durationMinutes: s.durationMinutes,
           status: s.status === "DRAFT" ? "DRAFT" : "SCHEDULED", allowDraw: s.allowDraw, showResultsToParticipants: s.showResultsToParticipants,
+          showWinnersToParticipants: s.showWinnersToParticipants,
           requireConsent: s.requireConsent, enableScorePrediction: s.enableScorePrediction, collectLateEntries: s.collectLateEntries,
           campaignName: s.campaignName ?? "", eventName: s.eventName ?? "",
           fields: s.fields.map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options.join(", "), required: f.required })),

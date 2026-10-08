@@ -4,7 +4,7 @@ import { readJson, route } from "@/lib/http";
 import { resultSchema } from "@/lib/validation";
 import { finalizeResult } from "@/lib/results";
 
-/** Step 2: finalize. Idempotency: a FINAL result is refused with 409 until explicitly reopened. */
+/** Step 2: finalize. Idempotency: a FINAL result is refused with 409; finalized results are permanent. */
 export const POST = route<{ id: string }>(async (req, { params }) => {
   const admin = await requireAdmin(req);
   const input = await readJson(req, resultSchema);

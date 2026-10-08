@@ -76,7 +76,7 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
     await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`; // serialize concurrent finalizations
     const existing = await tx.matchResult.findUnique({ where: { matchId } });
     if (existing?.resultStatus === "FINAL") {
-      throw new ApiError(409, "ALREADY_FINAL", "This result is already finalized. Reopen it before changing it.");
+      throw new ApiError(409, "ALREADY_FINAL", "This result is already finalized and cannot be changed.");
     }
     const now = await dbNow(tx);
     const result = await tx.matchResult.upsert({
@@ -126,14 +126,7 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
       ...preds.filter((p) => p.scoreWinner).map((p) => ({ type: "SCORE_WINNER" as const, ...base(p) })),
     ]);
 
-    await audit(tx, {
-      actorId,
-      action: existing ? "ADMIN_RESULT_CORRECTED" : "ADMIN_RESULT_FINALIZED",
-      entityType: "MatchResult",
-      entityId: result.id,
-      before: existing ?? undefined,
-      after: result,
-    });
+    await audit(tx, { actorId, action: "ADMIN_RESULT_FINALIZED", entityType: "MatchResult", entityId: result.id, after: result });
     return {
       result,
       winners: pickWinners.count + scoreExact.count,
@@ -164,20 +157,4 @@ export async function getScoreDraw(sessionId: string) {
       return p ? [{ id: p.id, name: p.participant.fullName, submittedAt: p.submittedAt, isWinner: p.id === data.winnerPredictionId }] : [];
     }),
   };
-}
-
-/** SUPER_ADMIN only (enforced by the route). Unlocks the result and resets every evaluation to PENDING. */
-export async function reopenResult(sessionId: string, actorId: string) {
-  const session = await getSession(sessionId);
-  const matchId = session.matchId;
-  return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
-    const existing = await tx.matchResult.findUnique({ where: { matchId } });
-    if (!existing || existing.resultStatus !== "FINAL") throw new ApiError(409, "NOT_FINAL", "There is no finalized result to reopen.");
-    const result = await tx.matchResult.update({ where: { matchId }, data: { resultStatus: "PENDING", finalizedAt: null } });
-    await tx.prediction.updateMany({ where: { session: { matchId } }, data: { resultStatus: "PENDING", scoreCorrect: null, scoreWinner: false } });
-    await tx.predictionSession.updateMany({ where: { matchId, status: "COMPLETED" }, data: { status: "SCHEDULED" } });
-    await audit(tx, { actorId, action: "ADMIN_RESULT_REOPENED", entityType: "MatchResult", entityId: result.id, before: existing, after: result });
-    return result;
-  });
 }

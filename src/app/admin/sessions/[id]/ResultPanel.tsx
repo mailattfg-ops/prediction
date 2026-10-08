@@ -13,8 +13,8 @@ type Preview = {
   otherSessions: { id: string; label: string; predictions: number }[];
 };
 
-export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmin, stats, cancelled }: {
-  sessionId: string; homeTeam: string; awayTeam: string; result: Result; isSuperAdmin: boolean; cancelled: boolean;
+export function ResultPanel({ sessionId, homeTeam, awayTeam, result, stats, cancelled }: {
+  sessionId: string; homeTeam: string; awayTeam: string; result: Result; cancelled: boolean;
   stats: { total: number; winners: number; losers: number; home: number; away: number; draw: number; scoreEnabled: boolean; scoreCorrect: number; scoreWinnerName: string | null };
 }) {
   const router = useRouter();
@@ -23,7 +23,6 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
   const [away, setAway] = useState(result?.awayScore ?? 0);
   const [override, setOverride] = useState<"" | Outcome>("");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [reopen, setReopen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,9 +48,7 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Match Result</h2>
-          <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
-            Result Finalized{result.version > 1 ? ` · corrected (v${result.version})` : ""}
-          </span>
+          <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">Result Finalized</span>
         </div>
         <div className="text-2xl font-bold">
           {homeTeam} {result.homeScore} - {result.awayScore} {awayTeam}
@@ -71,23 +68,7 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
             {stats.scoreWinnerName ? <>Score-prize winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score-prize winner."}
           </div>
         )}
-        {error && <Alert>{error}</Alert>}
-        {isSuperAdmin ? (
-          <Button variant="secondary" onClick={() => setReopen(true)} disabled={busy}>Reopen Result</Button>
-        ) : (
-          <p className="text-xs text-slate-500">Only a Super Admin can reopen a finalized result.</p>
-        )}
-        <Modal open={reopen} title="Reopen finalized result?" onClose={() => setReopen(false)}>
-          <Alert>
-            Changing the final result will recalculate all participant results and may trigger WhatsApp notifications again when you finalize. This action is recorded in the audit log.
-          </Alert>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setReopen(false)}>Cancel</Button>
-            <Button variant="danger" disabled={busy} onClick={() => call(() => api(`/api/sessions/${sessionId}/result/reopen`, { method: "POST" }), () => { setReopen(false); router.refresh(); })}>
-              Yes, reopen result
-            </Button>
-          </div>
-        </Modal>
+        <p className="text-xs text-slate-500">Finalized results are permanent and cannot be changed.</p>
       </Card>
     );
   }
@@ -95,11 +76,6 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
   return (
     <Card className="space-y-4">
       <h2 className="text-lg font-semibold">Enter Match Result</h2>
-      {result?.resultStatus === "PENDING" && (
-        <Alert kind="info">
-          This result was reopened. Previous result: {homeTeam} {result.homeScore} - {result.awayScore} {awayTeam}. Participant results are PENDING until you finalize again.
-        </Alert>
-      )}
       <div className="flex flex-wrap items-end gap-3">
         <Field label={homeTeam}><Input type="number" min={0} max={99} value={home} onChange={(e) => setHome(Number(e.target.value))} className="w-24 text-center text-xl font-bold" /></Field>
         <div className="pb-3 font-bold text-slate-400">VS</div>
@@ -155,7 +131,10 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
                     : "Nobody wins in this session."}
               </p>
             )}
-            <p className="text-xs text-slate-500">Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications. It cannot be repeated without a Super Admin reopening the result.</p>
+            <p className="text-xs text-slate-500">
+              Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications.{" "}
+              <strong>This is permanent and cannot be undone.</strong>
+            </p>
             {error && <Alert>{error}</Alert>}
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setPreview(null)}>Cancel</Button>

@@ -75,9 +75,8 @@ listed, so add yours there if the page loads but buttons do nothing. Restart `np
    `MatchResult` as FINAL, `UPDATE predictions SET resultStatus = WINNER` where
    `selectedOutcome = winningOutcome` and LOST otherwise, mark sessions COMPLETED, insert one notification
    job per prediction, write the audit log.
-3. A FINAL result refuses further finalization (HTTP 409). Only a SUPER_ADMIN can **Reopen Result**
-   (`POST /api/sessions/:id/result/reopen`), which resets evaluations to PENDING and is audit-logged.
-   Re-finalizing bumps `MatchResult.version` and logs `ADMIN_RESULT_CORRECTED`.
+3. A FINAL result refuses further finalization (HTTP 409). Finalized results are permanent: there is no
+   reopen or correction path. A wrong result can only be removed together with its match (Matches → Delete).
 
 Winner determination is `homeScore > awayScore → HOME`, `< → AWAY`, `= → DRAW`, with an optional explicit
 override for official rulings. No randomness or heuristics anywhere (`src/lib/results.ts`).
@@ -115,14 +114,22 @@ right team. This is a plain comparison, no randomness. If several participants g
 * The winner is the first entry of the shuffled order. The whole draw (method, pool, order, winner,
   time, admin) is written to the audit log as `SCORE_WINNER_DRAWN`, and the Winners page shows the draw
   record with runners-up in case a winner has to be replaced.
-* The draw happens inside the finalization transaction only; the preview never draws. Reopening and
-  re-finalizing performs a new draw and keeps the old record.
+* The draw happens inside the finalization transaction only; the preview never draws.
 
 References: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle and
 https://nodejs.org/api/crypto.html#cryptorandomintmin-max-callback.
 
 The score winner receives the `score_winner` WhatsApp template, appears on the Winners page, and is
 flagged in the exports (`Predicted Score`, `Exact Score`, `Score Winner` columns).
+
+## Result and winner on the QR page
+
+Once the admin finalizes the result, anyone who opens the QR link again sees a result screen instead of
+the form: the final score, who won, the drawn score-prize winner (name, masked mobile such as
+`+91••••••••10`, predicted score and submission time) and the names of all winning participants (first
+50, then "and N more"). Mobile numbers and emails are never shown. The success screen tells participants
+to scan again after the match. Controlled per session by **After the result is finalized, show the final
+score and winner names on the QR page** (on by default); with it off the page shows only the score.
 
 ## Timed-out registrations (details after the window closes)
 
@@ -174,7 +181,7 @@ POST /api/sessions/:id/cancel             GET  /api/sessions/:id/qr?format=png|s
 GET  /api/sessions/:id/predictions[?winners=1]
 GET  /api/sessions/:id/results            (counts, percentages, per-minute timeline)
 GET  /api/sessions/:id/export?format=csv|xlsx[&winners=1]
-POST /api/sessions/:id/result/preview     POST /api/sessions/:id/result     POST /api/sessions/:id/result/reopen (SUPER_ADMIN)
+POST /api/sessions/:id/result/preview     POST /api/sessions/:id/result     (finalize, permanent)
 GET  /api/sessions/:id/notifications[?status=FAILED]   POST /api/sessions/:id/notifications/retry
 GET  /api/public/sessions/:token          POST /api/public/sessions/:token/prediction
 POST /api/jobs/notifications              (Authorization: Bearer $CRON_SECRET)
@@ -190,7 +197,7 @@ Errors are always `{ "error": { "code", "message", "details?" } }`. Public predi
 prisma/schema.prisma          data model (see below) · prisma/seed.ts
 src/proxy.ts                  auth gate for /admin and admin APIs
 src/lib/window.ts             the 10-minute decision (pure, unit-tested)
-src/lib/predictions.ts        submission transaction        src/lib/results.ts   finalize / reopen
+src/lib/predictions.ts        submission transaction        src/lib/results.ts   finalize
 src/lib/sessions.ts           session service + stats       src/lib/matches.ts
 src/lib/notifications/        templates · queue · whatsapp client · worker
 src/lib/export.ts qr.ts auth.ts jwt.ts validation.ts rate-limit.ts audit.ts http.ts format.ts db.ts
@@ -209,7 +216,7 @@ session), `Participant` (unique mobile), `Prediction` (unique session + particip
 * All business rules run on the server; the browser is untrusted (time, status, validation).
 * Passwords: bcrypt (cost 12). Sessions: signed JWT in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in
   production), 12 h expiry. Admin mutations also verify the `Origin` header.
-* Role checks in handlers (`requireAdmin(req, "SUPER_ADMIN")` for reopen).
+* Role checks in handlers (`requireAdmin(req, role)`), roles SUPER_ADMIN and ADMIN.
 * zod validation with length limits on every input, Prisma parameterized queries, React escaping, logo
   URLs restricted to http(s), CSV cells neutralized against formula injection.
 * Security headers + CSP in production (`next.config.ts`), `X-Powered-By` removed.
@@ -228,7 +235,7 @@ npm test                 # unit tests always run; integration tests run when DAT
 Covered: 09:59 accepted, exactly 10:00 rejected, 10:01 rejected, duplicate user rejected, invalid token,
 cancelled session, not-started session, concurrent submissions (two users both succeed, one user three
 times yields one record), client timestamps ignored, next-day access rejected, deterministic winner
-evaluation, finalize-once idempotency, reopen + correction audit trail, draw template selection, worker
+evaluation, finalize-once idempotency, audit trail, draw template selection, worker
 draining in dry-run.
 
 ## Deployment

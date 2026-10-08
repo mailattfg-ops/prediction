@@ -57,6 +57,7 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
     : now < start ? "upcoming"
     : now < expiry ? "open"
     : "closed";
+  const resultOut = !!session.finalScore && phase !== "cancelled";
 
   return (
     <div className="space-y-4">
@@ -65,6 +66,9 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
         <SuccessCard session={session} predictedTeam={success.predictedTeam} score={success.score} />
       ) : timedOut ? (
         <TimeOutCard session={session} />
+      ) : resultOut ? (
+        // The admin has finalized the result: anyone reopening the QR page sees the score and the winner.
+        <ResultCard session={session} />
       ) : phase === "open" || (phase === "closed" && session.collectLateEntries) ? (
         // After expiry (when the session keeps collecting details) the form stays exactly as it is;
         // the server rejects the prediction at submit, the details are kept, and the popup appears then.
@@ -125,19 +129,27 @@ function MatchHeader({ session, phase, remaining }: { session: PublicSession; ph
         {session.match.venue && <div className="text-xs text-slate-500">{session.match.venue}</div>}
       </div>
       <div className="mt-4 rounded-xl bg-slate-900 px-4 py-3 text-center text-white" aria-live="polite">
-        {phase === "open" && (
+        {session.finalScore && phase !== "cancelled" ? (
+          <>
+            <div className="text-xs uppercase tracking-wide text-slate-300">Full time</div>
+            <div className="font-mono text-3xl font-bold tabular-nums">
+              {session.finalScore.homeScore} - {session.finalScore.awayScore}
+            </div>
+          </>
+        ) : null}
+        {!session.finalScore && phase === "open" && (
           <>
             <div className="text-xs uppercase tracking-wide text-slate-300">Prediction closes in</div>
             <div className="font-mono text-3xl font-bold tabular-nums">{clock(remaining)}</div>
           </>
         )}
-        {phase === "upcoming" && (
+        {!session.finalScore && phase === "upcoming" && (
           <>
             <div className="text-xs uppercase tracking-wide text-slate-300">Prediction opens in</div>
             <div className="font-mono text-3xl font-bold tabular-nums">{clock(remaining)}</div>
           </>
         )}
-        {phase === "closed" &&
+        {!session.finalScore && phase === "closed" &&
           (session.collectLateEntries ? (
             <>
               <div className="text-xs uppercase tracking-wide text-slate-300">Prediction closes in</div>
@@ -208,6 +220,65 @@ function ClosedCard({ session }: { session: PublicSession }) {
   );
 }
 
+function ResultCard({ session }: { session: PublicSession }) {
+  const f = session.finalScore!;
+  const w = session.winners;
+  const outcomeText = f.winningOutcome === "DRAW" ? "The match ended in a draw" : `${f.winningOutcome === "HOME" ? session.match.homeTeam : session.match.awayTeam} won`;
+  return (
+    <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
+      <div className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Final result</div>
+      <div className="mt-2 text-2xl font-black">
+        {session.match.homeTeam} {f.homeScore} - {f.awayScore} {session.match.awayTeam}
+      </div>
+      <div className="mt-1 text-slate-600">{outcomeText}</div>
+
+      {w ? (
+        <div className="mt-5 space-y-4">
+          {w.scoreWinner && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-3xl">🏆</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Winner</div>
+              <div className="mt-1 text-2xl font-black text-amber-900">{w.scoreWinner.name}</div>
+              <div className="mt-1 text-sm text-amber-900">
+                {w.scoreWinner.maskedMobile}
+                {w.scoreWinner.predictedScore && <> · predicted {w.scoreWinner.predictedScore}</>}
+                {" · "}
+                {w.scoreWinner.submittedLabel}
+              </div>
+              {w.count > 1 && (
+                <div className="mt-2 text-xs text-amber-800">Drawn at random from {w.count} exact-score predictions.</div>
+              )}
+            </div>
+          )}
+          <div>
+            <div className="text-sm font-semibold text-slate-700">
+              {w.count === 0
+                ? session.enableScorePrediction
+                  ? "Nobody predicted the exact score."
+                  : "Nobody predicted the result."
+                : session.enableScorePrediction
+                  ? `${w.count} participant${w.count === 1 ? "" : "s"} predicted the exact score`
+                  : `${w.count} participant${w.count === 1 ? "" : "s"} predicted correctly`}
+            </div>
+            {w.names.length > 0 && (
+              <ul className="mt-2 flex flex-wrap justify-center gap-1.5">
+                {w.names.map((n, i) => (
+                  <li key={`${n}-${i}`} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{n}</li>
+                ))}
+                {w.count > w.names.length && <li className="px-2 py-1 text-xs text-slate-500">and {w.count - w.names.length} more</li>}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">Winners are notified on WhatsApp.</p>
+      )}
+      <ResultSplit session={session} />
+      <p className="mt-5 text-xs text-slate-500">Thank you for participating!</p>
+    </div>
+  );
+}
+
 function TimeOutCard({ session }: { session: PublicSession }) {
   return (
     <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
@@ -242,7 +313,9 @@ function SuccessCard({ session, predictedTeam, score }: { session: PublicSession
         <div className="text-2xl font-black text-emerald-700">{predictedTeam}</div>
       )}
       <p className="mt-4 text-slate-600">Thank you for participating.</p>
-      <p className="mt-1 text-xs text-slate-500">A WhatsApp confirmation will be sent to your number. We will message you again when the result is in.</p>
+      <p className="mt-1 text-xs text-slate-500">
+        A WhatsApp confirmation will be sent to your number. After the match, the final score and the winner will be announced on WhatsApp and right here: scan the QR code again to see them.
+      </p>
       <ResultSplit session={session} />
     </div>
   );

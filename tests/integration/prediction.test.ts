@@ -6,9 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AdminUser, Match, SessionStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { submitLateEntry, submitPrediction } from "@/lib/predictions";
-import { finalizeResult, previewResult, reopenResult } from "@/lib/results";
+import { finalizeResult, previewResult } from "@/lib/results";
 import { processQueue } from "@/lib/notifications/worker";
-import { generateToken } from "@/lib/sessions";
+import { generateToken, getPublicSession } from "@/lib/sessions";
 import { deleteMatch } from "@/lib/matches";
 
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -135,7 +135,7 @@ describe.skipIf(!HAS_DB)("prediction submission (database)", () => {
 });
 
 describe.skipIf(!HAS_DB)("result finalization (database)", () => {
-  it("previews, finalizes once, refuses a second finalization, reopens and corrects with audit trail", async () => {
+  it("previews, finalizes once, refuses a second finalization, records the audit trail, drains the queue", async () => {
     // Results are per match, so use a dedicated match: other tests above added predictions to the shared one.
     const m2 = await prisma.match.create({ data: { homeTeam: "Arsenal", awayTeam: "Chelsea", kickoffAt: new Date() } });
     const s = await makeSession({ startOffsetMin: -1, allowDraw: true, matchId: m2.id });
@@ -161,25 +161,16 @@ describe.skipIf(!HAS_DB)("result finalization (database)", () => {
     await expect(finalizeResult(s.id, { homeScore: 2, awayScore: 1 }, admin.id)).rejects.toMatchObject({ httpStatus: 409, code: "ALREADY_FINAL" });
     expect(await prisma.notification.count({ where: { sessionId: s.id } })).toBe(8);
 
-    // Reopen + correct (draw) -> only the DRAW prediction wins, version bumps, audit records it.
-    await reopenResult(s.id, admin.id);
-    expect(await prisma.prediction.count({ where: { sessionId: s.id, resultStatus: "PENDING" } })).toBe(4);
-    const corrected = await finalizeResult(s.id, { homeScore: 1, awayScore: 1 }, admin.id);
-    expect(corrected).toMatchObject({ winners: 1, losers: 3 });
-    expect(corrected.result).toMatchObject({ winningOutcome: "DRAW", version: 2 });
-    const actions = (await prisma.auditLog.findMany({ where: { entityType: "MatchResult", entityId: corrected.result.id }, orderBy: { createdAt: "asc" } })).map((a) => a.action);
-    expect(actions).toEqual(["ADMIN_RESULT_FINALIZED", "ADMIN_RESULT_REOPENED", "ADMIN_RESULT_CORRECTED"]);
-
-    // Draw winner gets the draw template.
-    const drawWinner = await prisma.notification.findFirst({ where: { sessionId: s.id, type: "PREDICTION_WINNER", createdAt: { gt: corrected.result.finalizedAt! } } });
-    expect(drawWinner?.templateName).toBe("prediction_winner_draw");
+    // Finalization is permanent: the audit trail holds exactly one finalization entry.
+    const actions = (await prisma.auditLog.findMany({ where: { entityType: "MatchResult", entityId: fin.result.id }, orderBy: { createdAt: "asc" } })).map((a) => a.action);
+    expect(actions).toEqual(["ADMIN_RESULT_FINALIZED"]);
 
     // Worker (dry-run) drains the whole queue, including any backlog left by other sessions in this database.
     for (let i = 0; i < 1000; i++) {
       const r = await processQueue(200);
       if (!r.processed) break;
     }
-    expect(await prisma.notification.count({ where: { sessionId: s.id, status: "SENT" } })).toBe(12);
+    expect(await prisma.notification.count({ where: { sessionId: s.id, status: "SENT" } })).toBe(8);
     expect(await prisma.notification.count({ where: { sessionId: s.id, status: { not: "SENT" } } })).toBe(0);
     await prisma.predictionSession.deleteMany({ where: { matchId: m2.id } });
     await prisma.match.delete({ where: { id: m2.id } });
@@ -187,7 +178,7 @@ describe.skipIf(!HAS_DB)("result finalization (database)", () => {
 });
 
 describe.skipIf(!HAS_DB)("exact score prediction (database)", () => {
-  it("marks exact scores, draws one score winner at random among them, records the draw, notifies once, resets on reopen", async () => {
+  it("marks exact scores, draws one score winner at random among them, records the draw, notifies once, publishes the winner", async () => {
     const m3 = await prisma.match.create({ data: { homeTeam: "Barcelona", awayTeam: "Real Madrid", kickoffAt: new Date() } });
     const s = await makeSession({ startOffsetMin: -1, matchId: m3.id, enableScorePrediction: true });
     await expect(submitPrediction(s.secureToken, body())).rejects.toThrow(); // score is required when enabled
@@ -224,9 +215,17 @@ describe.skipIf(!HAS_DB)("exact score prediction (database)", () => {
     expect(draw.winnerPredictionId).toBe(winners[0].id);
     expect(draw.method).toContain("Fisher-Yates");
 
-    await reopenResult(s.id, admin.id);
-    const reset = await prisma.prediction.findMany({ where: { sessionId: s.id } });
-    expect(reset.every((r) => r.scoreCorrect === null && r.scoreWinner === false)).toBe(true);
+    // Participants reopening the QR page see the final score and the winner (names only, masked number).
+    const pub = await getPublicSession(s.secureToken);
+    expect(pub?.finalScore).toMatchObject({ homeScore: 2, awayScore: 1, winningOutcome: "HOME" });
+    expect(pub?.winners).toMatchObject({ count: 2 });
+    expect(pub?.winners?.names).toHaveLength(2);
+    expect(pub?.winners?.scoreWinner).toMatchObject({ name: "Test User", predictedScore: "2 - 1" });
+    expect(pub?.winners?.scoreWinner?.maskedMobile).toMatch(/^\+91•+\d{2}$/);
+    expect(JSON.stringify(pub?.winners)).not.toContain("@test.local"); // never emails
+    await prisma.predictionSession.update({ where: { id: s.id }, data: { showWinnersToParticipants: false } });
+    expect((await getPublicSession(s.secureToken))?.winners).toBeNull();
+    await prisma.predictionSession.update({ where: { id: s.id }, data: { showWinnersToParticipants: true } });
 
     await prisma.predictionSession.deleteMany({ where: { matchId: m3.id } });
     await prisma.match.delete({ where: { id: m3.id } });

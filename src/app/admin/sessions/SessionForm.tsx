@@ -14,6 +14,7 @@ export type SessionFormValues = {
   status: "DRAFT" | "SCHEDULED";
   allowDraw: boolean;
   showResultsToParticipants: boolean;
+  showWinnersToParticipants: boolean;
   requireConsent: boolean;
   enableScorePrediction: boolean;
   collectLateEntries: boolean;
@@ -42,7 +43,7 @@ export function SessionForm({ id, matches, initial, defaultMatchId }: { id?: str
   const [v, setV] = useState<SessionFormValues>(
     initial ?? {
       matchId: defaultMatchId ?? matches[0]?.id ?? "", startTime: defaultStart(), durationMinutes: 10, status: "SCHEDULED",
-      allowDraw: false, showResultsToParticipants: false, requireConsent: false, enableScorePrediction: false, collectLateEntries: true, campaignName: "", eventName: "", fields: [],
+      allowDraw: false, showResultsToParticipants: false, showWinnersToParticipants: true, requireConsent: false, enableScorePrediction: false, collectLateEntries: true, campaignName: "", eventName: "", fields: [],
     },
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -116,6 +117,11 @@ export function SessionForm({ id, matches, initial, defaultMatchId }: { id?: str
         <div className="grid gap-2 md:grid-cols-3">
           <Checkbox checked={v.allowDraw} onChange={(e) => patch({ allowDraw: e.target.checked })} label="Allow “Draw” as a prediction" />
           <Checkbox checked={v.showResultsToParticipants} onChange={(e) => patch({ showResultsToParticipants: e.target.checked })} label="Show vote split to participants" />
+          <Checkbox
+            checked={v.showWinnersToParticipants}
+            onChange={(e) => patch({ showWinnersToParticipants: e.target.checked })}
+            label="After the result is finalized, show the final score and winner names on the QR page"
+          />
           <Checkbox checked={v.requireConsent} onChange={(e) => patch({ requireConsent: e.target.checked })} label="Require privacy consent checkbox" />
           <Checkbox
             checked={v.enableScorePrediction}

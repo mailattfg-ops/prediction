@@ -117,7 +117,8 @@ model PredictionSession {
   expiryTime                DateTime
   status                    SessionStatus @default(SCHEDULED)
   allowDraw                 Boolean       @default(false)
-  showResultsToParticipants Boolean       @default(false)
+  showResultsToParticipants Boolean       @default(false) // vote split on the participant page
+  showWinnersToParticipants Boolean       @default(true) // final score + winner names on the participant page after finalization
   requireConsent            Boolean       @default(false)
   enableScorePrediction     Boolean       @default(false) // participants also predict the exact score
   collectLateEntries        Boolean       @default(true) // after expiry keep collecting details (no prediction) as LateEntry rows

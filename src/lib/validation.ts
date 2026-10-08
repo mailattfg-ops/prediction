@@ -43,6 +43,7 @@ export const sessionSchema = z
     status: z.enum(["DRAFT", "SCHEDULED"]).default("SCHEDULED"),
     allowDraw: z.boolean().default(false),
     showResultsToParticipants: z.boolean().default(false),
+    showWinnersToParticipants: z.boolean().default(true),
     requireConsent: z.boolean().default(false),
     enableScorePrediction: z.boolean().default(false),
     collectLateEntries: z.boolean().default(true),
