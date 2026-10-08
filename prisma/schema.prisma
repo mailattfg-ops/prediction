@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+}
+
+// ACTIVE / EXPIRED are never stored: they are derived from the clock on every read.
+enum SessionStatus {
+  DRAFT
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum Outcome {
+  HOME
+  AWAY
+  DRAW
+}
+
+enum PredictionResult {
+  PENDING
+  WINNER
+  LOST
+}
+
+enum ResultStatus {
+  PENDING
+  FINAL
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  SELECT
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  RETRYING
+}
+
+enum NotificationType {
+  PREDICTION_SUBMITTED
+  PREDICTION_WINNER
+  PREDICTION_LOST
+  RESULT_ANNOUNCEMENT
+  SCORE_WINNER
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs        AuditLog[]
+  finalizedResults MatchResult[]     @relation("FinalizedBy")
+  createdSessions  PredictionSession[]
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  homeTeam     String
+  awayTeam     String
+  homeTeamLogo String?
+  awayTeamLogo String?
+  competition  String?
+  kickoffAt    DateTime
+  venue        String?
+  externalId   String?  @unique // slot for a future football data provider
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions PredictionSession[]
+  result   MatchResult?
+
+  @@index([kickoffAt])
+}
+
+model MatchResult {
+  id             String       @id @default(cuid())
+  matchId        String       @unique
+  match          Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  homeScore      Int
+  awayScore      Int
+  winningOutcome Outcome
+  resultStatus   ResultStatus @default(FINAL)
+  version        Int          @default(1) // bumps on every finalize; >1 means the result was corrected
+  finalizedAt    DateTime?
+  finalizedById  String?
+  finalizedBy    AdminUser?   @relation("FinalizedBy", fields: [finalizedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model PredictionSession {
+  id                        String        @id @default(cuid())
+  secureToken               String        @unique
+  matchId                   String
+  match                     Match         @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  startTime                 DateTime
+  durationMinutes           Int           @default(10)
+  expiryTime                DateTime
+  status                    SessionStatus @default(SCHEDULED)
+  allowDraw                 Boolean       @default(false)
+  showResultsToParticipants Boolean       @default(false)
+  requireConsent            Boolean       @default(false)
+  enableScorePrediction     Boolean       @default(false) // participants also predict the exact score
+  collectLateEntries        Boolean       @default(true) // after expiry keep collecting details (no prediction) as LateEntry rows
+  campaignName              String?
+  eventName                 String?
+  archivedAt                DateTime?
+  createdById               String?
+  createdBy                 AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+
+  fields      FormField[]
+  predictions Prediction[]
+  lateEntries LateEntry[]
+
+  @@index([status, startTime])
+  @@index([archivedAt])
+}
+
+model FormField {
+  id        String            @id @default(cuid())
+  sessionId String
+  session   PredictionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  key       String
+  label     String
+  type      FieldType         @default(TEXT)
+  options   String[]          @default([])
+  required  Boolean           @default(false)
+  sortOrder Int               @default(0)
+
+  @@unique([sessionId, key])
+}
+
+model Participant {
+  id        String   @id @default(cuid())
+  fullName  String
+  mobile    String   @unique // normalized E.164, the identity used for duplicate protection and WhatsApp
+  email     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  predictions   Prediction[]
+  notifications Notification[]
+  lateEntries   LateEntry[]
+
+  @@index([email])
+}
+
+model Prediction {
+  id              String            @id @default(cuid())
+  sessionId       String
+  session         PredictionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantId   String
+  participant     Participant       @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  selectedOutcome Outcome
+  resultStatus    PredictionResult  @default(PENDING)
+  predictedHomeScore Int?
+  predictedAwayScore Int?
+  scoreCorrect    Boolean? // null until the result is finalized
+  scoreWinner     Boolean           @default(false) // auto-selected among exact-score predictions (earliest submission)
+  customData      Json?
+  consentGiven    Boolean           @default(false)
+  submittedAt     DateTime          @default(now())
+  ipAddress       String?
+  userAgent       String?
+
+  notifications Notification[]
+
+  @@unique([sessionId, participantId])
+  @@index([sessionId, selectedOutcome])
+  @@index([sessionId, resultStatus])
+}
+
+/// Participant details captured after the prediction window closed. No outcome, no score, never evaluated.
+model LateEntry {
+  id            String            @id @default(cuid())
+  sessionId     String
+  session       PredictionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant       @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  customData    Json?
+  consentGiven  Boolean           @default(false)
+  submittedAt   DateTime          @default(now())
+  ipAddress     String?
+  userAgent     String?
+
+  @@unique([sessionId, participantId])
+  @@index([sessionId, submittedAt])
+}
+
+model Notification {
+  id                String             @id @default(cuid())
+  participantId     String
+  participant       Participant        @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  predictionId      String?
+  prediction        Prediction?        @relation(fields: [predictionId], references: [id], onDelete: SetNull)
+  sessionId         String? // denormalized for per-session dashboards
+  type              NotificationType
+  channel           String             @default("WHATSAPP")
+  templateName      String
+  phoneNumber       String
+  payload           Json // ordered template variables, computed at enqueue time
+  status            NotificationStatus @default(QUEUED)
+  attempts          Int                @default(0)
+  nextAttemptAt     DateTime           @default(now())
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([sessionId, type, status])
+}
+
+model AuditLog {
+  id         String     @id @default(cuid())
+  actorId    String?
+  actor      AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
