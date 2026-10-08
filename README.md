@@ -105,7 +105,7 @@ By default a session keeps collecting **participant details** after its window h
 the window closes, keep collecting participant details"). The participant page then keeps showing the
 normal form with the countdown at `00:00`. On submit the server rejects the prediction (410), the browser
 stores the details as a `LateEntry` (name, mobile, email, custom fields, consent, timestamp) and shows a
-**Prediction Time Over** popup saying the prediction was not counted but the details were registered. No
+**Prediction Time Over** popup saying the prediction was not counted. No
 outcome or score is ever stored or evaluated for these rows. With the toggle off, the page shows the plain
 "Prediction Closed" screen instead and nothing is collected.
 

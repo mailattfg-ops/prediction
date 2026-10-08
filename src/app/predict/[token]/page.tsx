@@ -36,7 +36,12 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-screen flex-col bg-gradient-to-b from-slate-900 via-slate-800 to-emerald-900 px-4 py-6 text-slate-900">
       <div className="mx-auto w-full max-w-md flex-1">{children}</div>
-      <p className="mt-6 text-center text-xs text-slate-400">Football Prediction · Powered by QR</p>
+      <p className="mt-6 text-center text-xs text-slate-400">
+        Football Prediction · Powered by{" "}
+        <a href="https://www.thinkforgeglobal.com/" target="_blank" rel="noopener noreferrer" className="font-medium text-slate-300 hover:text-white hover:underline">
+          Think Forge Global
+        </a>
+      </p>
     </main>
   );
 }

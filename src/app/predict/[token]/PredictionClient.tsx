@@ -83,7 +83,7 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
       )}
       <Modal open={popup} title="Prediction Time Over" onClose={() => setPopup(false)}>
         <p className="text-slate-700">The prediction window for this match has ended, so your prediction could not be counted.</p>
-        <p className="mt-2 text-slate-700">Your details have been registered for this event. Thank you for participating!</p>
+        <p className="mt-2 text-slate-700">Thank you for your interest.</p>
         <div className="mt-4 flex justify-end">
           <Button onClick={() => setPopup(false)}>OK</Button>
         </div>
@@ -217,7 +217,7 @@ function TimeOutCard({ session }: { session: PublicSession }) {
       <div className="mt-4 text-lg font-bold">
         {session.match.homeTeam} vs {session.match.awayTeam}
       </div>
-      <p className="mt-3 text-slate-700">Your details have been registered for this event. Thank you for participating!</p>
+      <p className="mt-3 text-slate-700">Thank you for your interest.</p>
       <ResultSplit session={session} />
     </div>
   );
