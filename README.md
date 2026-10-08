@@ -240,9 +240,7 @@ Useful scripts:
 | `WHATSAPP_TEMPLATE_LANGUAGE` | Template language code, default `en` |
 | `WHATSAPP_TEMPLATE_SUBMITTED`, `_WINNER`, `_WINNER_DRAW`, `_LOST`, `_SCORE_WINNER`, `_RESULT` | Names of the approved templates |
 | `CRON_SECRET` | Bearer token for `POST /api/jobs/notifications` (serverless alternative to the worker) |
-| `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` | Sponsor branding; empty name hides it. Logo can be a file in `public/sponsors/` or an https URL |
-| `ADMIN_AVATAR_URL` | Profile icon in the admin console (`/avatars/admin.svg` ships; empty shows a green letter avatar) |
-| `FOOTBALL_API_KEY` | Reserved for a future football data provider |
+| `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` | Sponsor branding; empty name hides it. Logo can be a file in `public/sponsors/` or an https URL || `FOOTBALL_API_KEY` | Reserved for a future football data provider |
 
 ## 8. WhatsApp setup
 
