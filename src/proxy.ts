@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/jwt";
+import { SESSION_COOKIE, authDisabled, verifySessionToken } from "@/lib/jwt";
 
 /** Gate for the admin UI and admin APIs. Handlers re-verify the cookie and check roles themselves. */
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // AUTH_DISABLED=true: no login at all; the login page just forwards to the dashboard.
-  if (process.env.AUTH_DISABLED === "true") {
+  // Login removed for now (unless AUTH_DISABLED=false): the login page just forwards to the dashboard.
+  if (authDisabled()) {
     return pathname === "/admin/login" ? NextResponse.redirect(new URL("/admin", req.url)) : NextResponse.next();
   }
 

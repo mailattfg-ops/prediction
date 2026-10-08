@@ -2,6 +2,9 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "@prisma/client";
 
+/** Login is removed for now: the admin console is open unless AUTH_DISABLED=false. Shared by proxy.ts and server code. */
+export const authDisabled = () => process.env.AUTH_DISABLED !== "false";
+
 export const SESSION_COOKIE = "admin_session";
 export const SESSION_TTL_SEC = 12 * 60 * 60;
 

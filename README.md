@@ -231,7 +231,7 @@ Useful scripts:
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AUTH_SECRET` | Secret for admin session cookies, at least 32 random characters |
-| `APP_URL` | Public base URL embedded in QR codes, no trailing slash |
+| `APP_URL` | Public base URL embedded in QR codes, no trailing slash. On Vercel it defaults to the production domain |
 | `APP_TIMEZONE` | IANA zone for admin displays, exports and WhatsApp timestamps (e.g. `Asia/Kolkata`) |
 | `DEFAULT_COUNTRY_CODE` | Digits added to 10-digit mobile numbers entered without a country code (e.g. `91`) |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME` | Super admin created by `npm run db:seed` |
@@ -242,7 +242,8 @@ Useful scripts:
 | `CRON_SECRET` | Bearer token for `POST /api/jobs/notifications` (serverless alternative to the worker) |
 | `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` | Sponsor branding; empty name hides it. Logo can be a file in `public/sponsors/` or an https URL |
 | `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` | When both are set, the sign-in page shows an "Autofill demo credentials" button. Leave empty in production |
-| `AUTH_DISABLED` | `true` opens the admin console without any login (every visitor acts as the first admin account). Anyone with the link can then manage events and read participant data; use only for private demos and set it back to `false` afterwards || `FOOTBALL_API_KEY` | Reserved for a future football data provider |
+| `AUTH_DISABLED` | Login is removed for now: unless this is `false`, the admin console opens without a login and every visitor acts as the first admin account. Anyone with the link can then manage events and read participant data. Set `false` (with `AUTH_SECRET` and an admin account) to bring the login back |
+| `FOOTBALL_API_KEY` | Reserved for a future football data provider |
 
 ## 8. WhatsApp setup
 
@@ -368,7 +369,7 @@ with the random draw record and public winner info, timed-out registrations, mat
 ## 13. Deployment
 
 Any Node 20.9+ host with PostgreSQL works (Railway, Render, Fly.io, a VPS with PM2, Docker). Vercel works
-too; use the cron route instead of the worker.
+too; see the Vercel checklist below.
 
 1. Provision PostgreSQL and set `DATABASE_URL`.
 2. Set `AUTH_SECRET`, `APP_URL` (public https URL used in QR codes), `APP_TIMEZONE`,
@@ -376,8 +377,8 @@ too; use the cron route instead of the worker.
 3. `npm ci && npm run build`.
 4. `npm run db:deploy` to apply migrations, then `npm run db:seed` once to create the super admin.
 5. Run `npm start` for the web app and `npm run worker` as a second always-on process
-   (PM2: `pm2 start npm --name worker -- run worker`). On Vercel, schedule
-   `POST /api/jobs/notifications` every minute with the `Authorization: Bearer $CRON_SECRET` header.
+   (PM2: `pm2 start npm --name worker -- run worker`). On Vercel no worker is
+   needed (see the Vercel checklist).
 6. Serve over HTTPS (required for secure cookies and for phones to trust the QR link).
 7. Set a strong admin password with `npm run admin:set -- <email> <password> "<name>"` (never commit real
    passwords; `.env.example` only carries a placeholder).
@@ -391,22 +392,26 @@ the same image running `npm run worker`.
 Environment Variables** (Production and Preview), followed by a redeploy (variables are read at build and
 request time, an existing deployment does not pick up new values):
 
-| Required | `DATABASE_URL` (a hosted PostgreSQL such as Neon or Supabase, not localhost), `AUTH_SECRET`, `APP_URL` (your `https://….vercel.app` or custom domain, used in QR codes), `APP_TIMEZONE`, `DEFAULT_COUNTRY_CODE` |
+| Required | `DATABASE_URL`: easiest is **Storage → Create Database → Neon** inside the Vercel project, which sets it (and `DATABASE_URL_UNPOOLED`, used for migrations) automatically. Any hosted PostgreSQL works; localhost does not |
+| Recommended | `APP_TIMEZONE`, `DEFAULT_COUNTRY_CODE`; `APP_URL` only for a custom domain (QR codes default to the Vercel production domain); `AUTH_SECRET` once the login is switched back on |
 |---|---|
 | Branding | `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` |
 | WhatsApp | `WHATSAPP_DRY_RUN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, template names, `CRON_SECRET` |
 | Optional | `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` (shows the demo sign-in button to **everyone** who opens the login page; only for private demos) |
 
 The `vercel-build` script runs `prisma migrate deploy`, `prisma db seed` and `next build`, so with
-`DATABASE_URL` and `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` set, each deployment
-applies migrations and makes sure the super admin exists (an existing account is never modified). To
+`DATABASE_URL` set each deployment applies migrations, and with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` /
+`SEED_ADMIN_NAME` it makes sure the super admin exists (an existing account is never modified). Without
+`DATABASE_URL` the build skips both steps and still deploys; the admin console then shows a **Setup needed**
+page that says what to fix. To
 diagnose a deployment open `https://<your-app>/api/health`: it reports missing variables, database
 reachability, migrations and whether an admin account exists, without revealing any values.
 
-The notification queue has no long-running worker on Vercel; `vercel.json` schedules
-`GET /api/jobs/notifications` every minute and Vercel sends `Authorization: Bearer $CRON_SECRET`
-automatically when `CRON_SECRET` is set. Hobby plans limit cron frequency, so check the schedule Vercel
-accepts for your plan.
+There is no long-running worker on Vercel. Each prediction, result and **Retry failed** drains the
+notification queue right after its response (Next.js `after()`), so messages go out within seconds.
+`vercel.json` also calls `GET /api/jobs/notifications` once a day as a backstop: the Hobby plan only allows
+daily cron jobs (a more frequent schedule makes every deployment fail), on Pro it can be `* * * * *`.
+Vercel sends `Authorization: Bearer $CRON_SECRET` automatically when `CRON_SECRET` is set.
 
 ## 14. Troubleshooting
 
@@ -420,6 +425,8 @@ accepts for your plan.
 | Messages fail | Check the error text under "Show failed" on the session page, fix credentials or template names, then "Retry failed". |
 | Winners show 0 in a score session although people picked the right team | By design: only the exact score wins in score sessions. |
 | A new session shows the result immediately | Its match already has a final result; create a new match for the next fixture. |
+| Vercel deployment fails: "Hobby accounts are limited to daily cron jobs" | A schedule in `vercel.json` runs more than once a day. Keep it daily on Hobby; messages are sent right after each submission anyway. |
+| Admin console shows "Setup needed" | The deployment has no working database. Follow the hint on the page or open `/api/health`, then redeploy. |
 
 ## 15. Security
 

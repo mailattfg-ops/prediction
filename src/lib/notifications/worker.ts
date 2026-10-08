@@ -58,3 +58,17 @@ export async function processQueue(batch = 25) {
   }
   return { processed: claimed.length, sent, failed };
 }
+
+/** Runs processQueue until nothing is due or the time budget is spent (serverless: cron route and after()). */
+export async function drainQueue(budgetMs = 50_000) {
+  const deadline = Date.now() + budgetMs;
+  const totals = { processed: 0, sent: 0, failed: 0 };
+  do {
+    const r = await processQueue();
+    totals.processed += r.processed;
+    totals.sent += r.sent;
+    totals.failed += r.failed;
+    if (r.processed === 0) break;
+  } while (Date.now() < deadline);
+  return totals;
+}

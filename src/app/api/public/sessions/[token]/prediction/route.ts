@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { drainQueue } from "@/lib/notifications/worker";
 import { ApiError, getIp, route } from "@/lib/http";
 import { assertRateLimit } from "@/lib/rate-limit";
 import { submitPrediction } from "@/lib/predictions";
@@ -18,6 +19,7 @@ export const POST = route<{ token: string }>(async (req, { params }) => {
     ip,
     userAgent: req.headers.get("user-agent") ?? undefined,
   });
+  after(() => drainQueue()); // WhatsApp confirmation goes out right away, no worker needed on Vercel
   return NextResponse.json(
     {
       prediction: {

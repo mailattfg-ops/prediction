@@ -5,12 +5,9 @@ import { cookies } from "next/headers";
 import type { Role } from "@prisma/client";
 import { prisma } from "./db";
 import { ApiError } from "./http";
-import { SESSION_COOKIE, SESSION_TTL_SEC, verifySessionToken, type AdminSession } from "./jwt";
+import { SESSION_COOKIE, SESSION_TTL_SEC, authDisabled, verifySessionToken, type AdminSession } from "./jwt";
 
-export { signSession } from "./jwt";
-
-/** AUTH_DISABLED=true opens the admin console without a login (temporary / private demos only). */
-export const authDisabled = () => process.env.AUTH_DISABLED === "true";
+export { authDisabled, signSession } from "./jwt";
 
 /** In open-access mode every visitor acts as the first admin account (created if none exists) so audit logs and foreign keys stay valid. */
 async function openAccessAdmin(): Promise<AdminSession> {

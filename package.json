@@ -17,7 +17,7 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "admin:set": "node --env-file-if-exists=.env --import tsx scripts/set-admin.ts",
-    "vercel-build": "prisma migrate deploy && prisma generate && prisma db seed && next build"
+    "vercel-build": "if [ -n \"$DATABASE_URL\" ]; then DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && prisma db seed; else echo 'DATABASE_URL is not set: skipping migrations and seed (open /api/health after deploy)'; fi && prisma generate && next build"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
