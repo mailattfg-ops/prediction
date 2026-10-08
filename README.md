@@ -396,8 +396,11 @@ request time, an existing deployment does not pick up new values):
 | WhatsApp | `WHATSAPP_DRY_RUN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, template names, `CRON_SECRET` |
 | Optional | `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` (shows the demo sign-in button to **everyone** who opens the login page; only for private demos) |
 
-Then, once, against the production database: `npm run db:deploy` and `npm run admin:set -- <email> <password> "<name>"`
-(run locally with `DATABASE_URL` pointing at the hosted database).
+The `vercel-build` script runs `prisma migrate deploy`, `prisma db seed` and `next build`, so with
+`DATABASE_URL` and `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` set, each deployment
+applies migrations and makes sure the super admin exists (an existing account is never modified). To
+diagnose a deployment open `https://<your-app>/api/health`: it reports missing variables, database
+reachability, migrations and whether an admin account exists, without revealing any values.
 
 The notification queue has no long-running worker on Vercel; `vercel.json` schedules
 `GET /api/jobs/notifications` every minute and Vercel sends `Authorization: Bearer $CRON_SECRET`
