@@ -102,11 +102,12 @@ the Winners page, and is flagged in the exports (`Predicted Score`, `Exact Score
 ## Timed-out registrations (details after the window closes)
 
 By default a session keeps collecting **participant details** after its window has closed (toggle: "After
-the window closes, keep collecting participant details"). The participant page then shows the details form
-with a notice that predictions are closed; on submit the person sees a **Time Out** screen, and the server
-stores a `LateEntry` (name, mobile, email, custom fields, consent, timestamp). No outcome or score is ever
-stored or evaluated for these rows. The same happens automatically when a prediction is rejected with 410
-because the window closed between page load and submit.
+the window closes, keep collecting participant details"). The participant page then keeps showing the
+normal form with the countdown at `00:00`. On submit the server rejects the prediction (410), the browser
+stores the details as a `LateEntry` (name, mobile, email, custom fields, consent, timestamp) and shows a
+**Prediction Time Over** popup saying the prediction was not counted but the details were registered. No
+outcome or score is ever stored or evaluated for these rows. With the toggle off, the page shows the plain
+"Prediction Closed" screen instead and nothing is collected.
 
 Rules: `POST /api/public/sessions/:token/late-entry` is accepted only when the database clock is past
 `expiryTime` (409 `WINDOW_OPEN` otherwise), one entry per session + mobile (409 `DUPLICATE`, also when the

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PublicSession } from "@/lib/sessions";
 import { api, ApiClientError } from "@/components/api";
+import { Modal } from "@/components/Modal";
 import { Alert, Button, Checkbox, Field, Input, Select } from "@/components/ui";
 
 type Phase = "upcoming" | "open" | "closed" | "cancelled";
@@ -21,7 +22,12 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
   const [offset, setOffset] = useState(() => Date.parse(initial.serverTime) - Date.now());
   const [now, setNow] = useState(() => Date.now() + offset);
   const [success, setSuccess] = useState<{ predictedTeam: string; score: string | null } | null>(null);
-  const [timedOut, setTimedOut] = useState<"late" | "missed" | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const [popup, setPopup] = useState(false);
+  const handleTimedOut = () => {
+    setTimedOut(true);
+    setPopup(true);
+  };
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now() + offset), 250);
@@ -58,23 +64,30 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
       {success ? (
         <SuccessCard session={session} predictedTeam={success.predictedTeam} score={success.score} />
       ) : timedOut ? (
-        <TimeOutCard session={session} reason={timedOut} />
-      ) : phase === "open" ? (
+        <TimeOutCard session={session} />
+      ) : phase === "open" || (phase === "closed" && session.collectLateEntries) ? (
+        // After expiry (when the session keeps collecting details) the form stays exactly as it is;
+        // the server rejects the prediction at submit, the details are kept, and the popup appears then.
         <PredictionForm
           session={session}
           onSuccess={(predictedTeam, score) => setSuccess({ predictedTeam, score })}
-          onTimedOut={setTimedOut}
+          onTimedOut={handleTimedOut}
           onClosed={(status) => setSession((s) => ({ ...s, status }))}
         />
       ) : phase === "upcoming" ? (
         <InfoCard icon="⏳" title="Not Open Yet" body="Prediction has not started yet. Keep this page open, the form will appear when the window opens." />
       ) : phase === "cancelled" ? (
         <InfoCard icon="🚫" title="Session Cancelled" body="This prediction session has been cancelled. Please scan a valid QR code for another active prediction." />
-      ) : session.collectLateEntries ? (
-        <PredictionForm session={session} late onSuccess={() => undefined} onTimedOut={setTimedOut} onClosed={(status) => setSession((s) => ({ ...s, status }))} />
       ) : (
         <ClosedCard session={session} />
       )}
+      <Modal open={popup} title="Prediction Time Over" onClose={() => setPopup(false)}>
+        <p className="text-slate-700">The prediction window for this match has ended, so your prediction could not be counted.</p>
+        <p className="mt-2 text-slate-700">Your details have been registered for this event. Thank you for participating!</p>
+        <div className="mt-4 flex justify-end">
+          <Button onClick={() => setPopup(false)}>OK</Button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -124,7 +137,15 @@ function MatchHeader({ session, phase, remaining }: { session: PublicSession; ph
             <div className="font-mono text-3xl font-bold tabular-nums">{clock(remaining)}</div>
           </>
         )}
-        {phase === "closed" && <div className="text-lg font-bold">Prediction Closed</div>}
+        {phase === "closed" &&
+          (session.collectLateEntries ? (
+            <>
+              <div className="text-xs uppercase tracking-wide text-slate-300">Prediction closes in</div>
+              <div className="font-mono text-3xl font-bold tabular-nums">00:00</div>
+            </>
+          ) : (
+            <div className="text-lg font-bold">Prediction Closed</div>
+          ))}
         {phase === "cancelled" && <div className="text-lg font-bold">Session Cancelled</div>}
       </div>
     </div>
@@ -187,16 +208,12 @@ function ClosedCard({ session }: { session: PublicSession }) {
   );
 }
 
-function TimeOutCard({ session, reason }: { session: PublicSession; reason: "late" | "missed" }) {
+function TimeOutCard({ session }: { session: PublicSession }) {
   return (
     <div className="rounded-2xl bg-white p-6 text-center shadow-xl">
       <div className="text-4xl">⏰</div>
-      <h2 className="mt-3 text-xl font-bold">Time Out</h2>
-      <p className="mt-2 text-slate-600">
-        {reason === "missed"
-          ? "The prediction window closed while you were submitting, so your prediction could not be counted."
-          : "The prediction window for this match had already ended, so no prediction was recorded."}
-      </p>
+      <h2 className="mt-3 text-xl font-bold">Prediction Time Over</h2>
+      <p className="mt-2 text-slate-600">The prediction window for this match has ended, so your prediction could not be counted.</p>
       <div className="mt-4 text-lg font-bold">
         {session.match.homeTeam} vs {session.match.awayTeam}
       </div>
@@ -236,12 +253,10 @@ type FormState = {
   predictedHomeScore: string; predictedAwayScore: string; customData: Record<string, string>;
 };
 
-function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed }: {
+function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
   session: PublicSession;
-  /** Window already closed: collect details only, no prediction. */
-  late?: boolean;
   onSuccess: (team: string, score: string | null) => void;
-  onTimedOut: (reason: "late" | "missed") => void;
+  onTimedOut: () => void;
   onClosed: (status: "CANCELLED" | "COMPLETED") => void;
 }) {
   const [form, setForm] = useState<FormState>({ fullName: "", mobile: "", email: "", consent: false, selectedOutcome: "", predictedHomeScore: "", predictedAwayScore: "", customData: {} });
@@ -266,11 +281,14 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
     setErrors({});
     setMessage(null);
     const details = { fullName: form.fullName, mobile: form.mobile, email: form.email, consent: form.consent || undefined, customData: form.customData };
-    const lateEntry = () => api(`/api/public/sessions/${session.token}/late-entry`, { method: "POST", body: details });
+    const showFieldErrors = (e: ApiClientError) => {
+      const mapped: Record<string, string> = {};
+      for (const [k, v] of Object.entries(e.details ?? {})) mapped[k.replace(/^customData\./, "")] = v;
+      setErrors(mapped);
+      setMessage("Please check the highlighted fields.");
+    };
     let selectedOutcome = form.selectedOutcome;
-    if (late) {
-      // nothing to validate beyond the details
-    } else if (session.enableScorePrediction) {
+    if (session.enableScorePrediction) {
       // Single question: the score. The winner follows from it (the server derives it again).
       if (form.predictedHomeScore === "" || form.predictedAwayScore === "") {
         setErrors({ predictedHomeScore: "Enter the score for both teams" });
@@ -290,11 +308,6 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
     }
     setBusy(true);
     try {
-      if (late) {
-        await lateEntry();
-        onTimedOut("late");
-        return;
-      }
       const res = await api<{ prediction: { predictedTeam: string } }>(`/api/public/sessions/${session.token}/prediction`, {
         method: "POST",
         body: { ...details, selectedOutcome, predictedHomeScore: form.predictedHomeScore, predictedAwayScore: form.predictedAwayScore },
@@ -302,25 +315,22 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
       onSuccess(res.prediction.predictedTeam, session.enableScorePrediction ? `${form.predictedHomeScore} - ${form.predictedAwayScore}` : null);
     } catch (err) {
       const e = err as ApiClientError;
-      if (e.code === "EXPIRED" && !late && session.collectLateEntries) {
-        // The window closed between page load and submit (e.g. opened 18:09:55, submitted 18:10:05):
-        // the prediction is rejected, but the details are kept as a timed-out registration.
+      if (e.code === "EXPIRED" && session.collectLateEntries) {
+        // The server has closed the window: the prediction is rejected, the details are kept as a
+        // timed-out registration (no outcome, no score) and the participant is told now, at submit.
         try {
-          await lateEntry();
-          onTimedOut("missed");
-          return;
-        } catch {
-          /* fall through to the closed screen */
+          await api(`/api/public/sessions/${session.token}/late-entry`, { method: "POST", body: details });
+          onTimedOut();
+        } catch (err2) {
+          const e2 = err2 as ApiClientError;
+          if (e2.code === "DUPLICATE") onTimedOut();
+          else if (e2.status === 422) showFieldErrors(e2);
+          else setMessage(e2.message || "Something went wrong. Please try again.");
         }
-      }
-      if (e.code === "EXPIRED") onClosed("COMPLETED");
+      } else if (e.code === "EXPIRED") onClosed("COMPLETED");
       else if (e.code === "CANCELLED") onClosed("CANCELLED");
-      else if (e.status === 422 && e.details) {
-        const mapped: Record<string, string> = {};
-        for (const [k, v] of Object.entries(e.details)) mapped[k.replace(/^customData\./, "")] = v;
-        setErrors(mapped);
-        setMessage("Please check the highlighted fields.");
-      } else setMessage(e.message || "Something went wrong. Please try again.");
+      else if (e.status === 422 && e.details) showFieldErrors(e);
+      else setMessage(e.message || "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -328,11 +338,6 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white p-5 shadow-xl" noValidate>
-      {late && (
-        <Alert kind="info">
-          Prediction time is over for this match, so predictions are no longer accepted. You can still register your details to take part in this event.
-        </Alert>
-      )}
       <h2 className="text-lg font-bold">Your details</h2>
       <Field label="Full Name" required error={errors.fullName}>
         <Input value={form.fullName} onChange={(e) => set("fullName", e.target.value)} autoComplete="name" maxLength={100} required />
@@ -365,7 +370,7 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
         </Field>
       ))}
 
-      {!late && !session.enableScorePrediction && (
+      {!session.enableScorePrediction && (
       <div>
         <h2 className="text-lg font-bold">Who will win?</h2>
         <div className="mt-2 grid gap-2" role="radiogroup" aria-label="Who will win?">
@@ -391,7 +396,7 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
       </div>
       )}
 
-      {!late && session.enableScorePrediction && (
+      {session.enableScorePrediction && (
         <div>
           <h2 className="text-lg font-bold">What will the final score be?</h2>
           <div className="mt-2 flex items-end gap-3">
@@ -425,7 +430,7 @@ function PredictionForm({ session, late = false, onSuccess, onTimedOut, onClosed
       )}
       {message && <Alert>{message}</Alert>}
       <Button type="submit" disabled={busy} className="w-full py-3 text-base">
-        {busy ? "Submitting…" : late ? "Register My Details" : "Submit Prediction"}
+        {busy ? "Submitting…" : "Submit Prediction"}
       </Button>
     </form>
   );
