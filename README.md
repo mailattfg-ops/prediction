@@ -384,6 +384,26 @@ too; use the cron route instead of the worker.
 Docker: a `node:22-alpine` image running `npm ci && npm run build` then `npm start` works; the worker is
 the same image running `npm run worker`.
 
+### Vercel checklist
+
+`.env` is never deployed, so every variable has to be entered in **Vercel → Project → Settings →
+Environment Variables** (Production and Preview), followed by a redeploy (variables are read at build and
+request time, an existing deployment does not pick up new values):
+
+| Required | `DATABASE_URL` (a hosted PostgreSQL such as Neon or Supabase, not localhost), `AUTH_SECRET`, `APP_URL` (your `https://….vercel.app` or custom domain, used in QR codes), `APP_TIMEZONE`, `DEFAULT_COUNTRY_CODE` |
+|---|---|
+| Branding | `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` |
+| WhatsApp | `WHATSAPP_DRY_RUN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, template names, `CRON_SECRET` |
+| Optional | `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` (shows the demo sign-in button to **everyone** who opens the login page; only for private demos) |
+
+Then, once, against the production database: `npm run db:deploy` and `npm run admin:set -- <email> <password> "<name>"`
+(run locally with `DATABASE_URL` pointing at the hosted database).
+
+The notification queue has no long-running worker on Vercel; `vercel.json` schedules
+`GET /api/jobs/notifications` every minute and Vercel sends `Authorization: Bearer $CRON_SECRET`
+automatically when `CRON_SECRET` is set. Hobby plans limit cron frequency, so check the schedule Vercel
+accepts for your plan.
+
 ## 14. Troubleshooting
 
 | Symptom | Cause and fix |
