@@ -1,281 +1,411 @@
-# Football Match Prediction Platform (QR)
+# Football Match Prediction Platform
 
-Event-style football prediction campaigns. An admin creates a prediction session for a match, prints the
-QR code, and participants who scan it get a 10-minute window to predict the winner. After the match the
-admin enters the score, the system marks every prediction WINNER or LOST, and WhatsApp notifications go
-out through the Meta WhatsApp Business Cloud API.
+A QR-code prediction game for football events. The admin creates a **match**, opens a **prediction
+session** for it and prints the QR code. Fans scan it, enter their details and predict the winner (or the
+exact score) inside a 10-minute window. After the game the admin enters the final score; the system marks
+every prediction as a winner or a loss, draws a score-prize winner where needed, shows the result on the
+QR page and sends WhatsApp messages through the Meta WhatsApp Business Cloud API.
 
 ```
-QR scan → match + countdown → name / mobile / email (+ custom fields) → pick Home / Away / Draw → submit
-       → WhatsApp confirmation → admin enters result → winners evaluated → WhatsApp winner / lost message
+Admin: create match → create session → print QR
+Fan:   scan QR → details + prediction → submit → WhatsApp confirmation
+Admin: enter final score → calculate winners → confirm (permanent)
+Fan:   WhatsApp winner / lost message → QR page shows score and winner
+Admin: winners list, exports, notification delivery
 ```
 
-## Stack
+Built for Green Jobs events by Think Forge Global.
 
-| Layer | Choice |
+---
+
+## Contents
+
+1. [Features](#1-features)
+2. [Key concepts: matches, sessions, statuses](#2-key-concepts-matches-sessions-statuses)
+3. [Running an event (admin guide)](#3-running-an-event-admin-guide)
+4. [What participants see](#4-what-participants-see)
+5. [Business rules](#5-business-rules)
+6. [Quick start (local development)](#6-quick-start-local-development)
+7. [Configuration (.env)](#7-configuration-env)
+8. [WhatsApp setup](#8-whatsapp-setup)
+9. [Architecture and project layout](#9-architecture-and-project-layout)
+10. [Data model](#10-data-model)
+11. [API reference](#11-api-reference)
+12. [Testing](#12-testing)
+13. [Deployment](#13-deployment)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Security](#15-security)
+16. [Extending the platform](#16-extending-the-platform)
+
+---
+
+## 1. Features
+
+**Admin console** (`/admin`)
+- Secure login (bcrypt passwords, signed httpOnly cookie), roles `SUPER_ADMIN` and `ADMIN`.
+- Dashboard: totals, live sessions, participation chart, WhatsApp delivery, recent sessions.
+- Matches: create, edit, delete (GitHub-style typed confirmation).
+- Sessions: window start and duration, draw on/off, winner pick or exact score, consent checkbox, extra
+  participant fields (text / number / select), event and campaign names, draft mode.
+- QR poster page with PNG / SVG download and print layout, sponsor branding included.
+- Live stats per session: vote split, predictions per minute, timed-out registrations.
+- Result entry with a preview of winners and losers and a confirmation dialog.
+- Winners page with the random-draw record, predictions table, CSV / Excel export.
+- WhatsApp delivery table per message type with "Retry failed".
+- Audit log of every admin action (session changes, finalization, draws, deletions, retries).
+
+**Participant page** (`/predict/<token>`)
+- Mobile-first, works from any QR scanner, sponsor strip, live countdown driven by the server clock.
+- Name, mobile, email, optional custom fields and consent.
+- Winner pick (Home / Away / Draw) or exact-score entry.
+- Success screen with confetti, "time over" dialog for late submissions, final result and winner screen
+  after the admin finalizes.
+
+**Platform**
+- Server-enforced 10-minute window using the database clock.
+- One prediction per person per session, enforced by database constraints.
+- Deterministic evaluation, cryptographically secure random draw for the score prize.
+- WhatsApp notifications through a database-backed queue with retries (no Redis needed).
+- Everything configurable per session or through environment variables; no fixtures are hard-coded.
+
+## 2. Key concepts: matches, sessions, statuses
+
+| | Match | Session |
+|---|---|---|
+| What it is | The football fixture: home team, away team, kick-off, competition, venue, logos | One prediction event on a match: its own QR code, window and settings |
+| Created | Once per real fixture | One or more per match (one per venue, gate or campaign) |
+| Holds | The final result | Predictions, timed-out registrations, winners, exports, notification counts |
+| Where | Matches page | Sessions page, New session |
+
+The result belongs to the match. Entering the score from any session evaluates every session on that
+match; the confirmation dialog lists the other sessions that will be affected. A new session created on a
+match that already has a final result shows the result screen immediately.
+
+Session status is partly stored, partly computed from the clock:
+
+| Status | Meaning |
 |---|---|
-| App | Next.js 16 (App Router, TypeScript), Tailwind CSS 4 |
-| UI | shadcn/ui components on Base UI primitives (`src/components/ui`), lucide-react icons, recharts charts, sonner toasts, canvas-confetti |
-| Database | PostgreSQL + Prisma 6 |
-| Auth | bcrypt password hashing, HS256 JWT (`jose`) in an httpOnly cookie, roles `SUPER_ADMIN` / `ADMIN` |
-| Validation | zod (server-side, every input) |
-| QR | `qrcode` (PNG / SVG / data URL) |
-| Export | CSV (built-in) and Excel (`exceljs`) |
-| Notifications | DB-backed job queue (`Notification` table, `FOR UPDATE SKIP LOCKED`) + worker, Meta WhatsApp Cloud API |
-| Tests | Vitest (unit + PostgreSQL integration) |
+| Draft | Saved but the QR link answers "invalid QR" |
+| Scheduled | Published, window not open yet (countdown to opening) |
+| Live | Window open: predictions accepted |
+| Expired | Window closed, result not entered yet |
+| Completed | Result finalized |
+| Cancelled | Stopped by the admin, QR rejects submissions |
 
-No Redis is required: the notification queue lives in PostgreSQL and is drained by `npm run worker`
-(or by a cron hitting `POST /api/jobs/notifications` on serverless hosts).
+## 3. Running an event (admin guide)
 
-## Quick start (local)
+1. **Sign in** at `/admin/login` with the admin account (see [Quick start](#6-quick-start-local-development)
+   for the seeded credentials).
+2. **Create the match** (Matches → New match): home team, away team, kick-off date and time. Logos,
+   competition and venue are optional and appear on the participant page.
+3. **Create the session** (New session). Settings:
+   - *Prediction opens at* and *Duration*: the window; default 10 minutes. Expiry is start plus duration.
+   - *Status*: Scheduled (live) or Draft.
+   - *Exact score prediction*: participants enter a score instead of picking a team. Only the exact score
+     wins; one score-prize winner is drawn at random among exact scores.
+   - *Allow "Draw"*: offers Draw as an outcome, or accepts draw scores in score mode.
+   - *Show result & winners on the QR page*: after finalization the QR page shows the score and winners.
+   - *Show vote split to participants*: percentages on the success and result screens.
+   - *Keep collecting details after the window closes*: late scanners still fill the form, see a
+     "Prediction time over" dialog and are stored as timed-out registrations (no prediction).
+   - *Require privacy consent checkbox*.
+   - *Additional participant fields*: presets (Age, Gender, City, State, Country, Organization) or custom
+     text / number / select fields, each optionally required.
+4. **Print the QR** (session → QR code): download PNG or SVG, or Print. The poster shows the sponsor, the
+   match and "Scan to predict". The QR embeds `APP_URL`, so set it to the public address before printing.
+5. **During the window**: the session page shows live counts, the vote split and predictions per minute.
+   Predictions lists every entry; timed-out registrations appear below it.
+6. **Enter the result** (session → Enter match result): type both scores, optionally override the official
+   outcome, click **Calculate winners**, check the preview (winners, losers, other sessions on the match,
+   exact-score count) and **Confirm result**. This is permanent: predictions are marked, the score-prize
+   winner is drawn, notifications are queued and the audit log is written.
+7. **Winners and exports**: the Winners page lists winners and the draw record (method, pool, order with
+   runners-up). Export CSV or Excel from the session, predictions or winners pages.
+8. **WhatsApp delivery**: the session page shows sent / failed / queued per message type. Queued messages
+   are sent by the worker (`npm run worker`) or the cron route; **Retry failed** re-queues failures.
+9. **Cancel, archive, delete**: Cancel stops a session immediately (data kept). Archive hides a session and
+   disables its QR (data kept). Delete match removes the match with all its sessions, predictions,
+   registrations, result and notification logs after typing the match name; participant identities are kept.
+
+## 4. What participants see
+
+| Situation | Screen |
+|---|---|
+| Window not open yet | Match card with "Prediction opens in" countdown; the form appears automatically |
+| Window open | "Live" badge, countdown, details form, Who will win? or score entry, Submit prediction |
+| Submitted | "Prediction submitted" with their pick, confetti, note that the winner will be announced here and on WhatsApp |
+| Already submitted | "You have already submitted your prediction for this match." |
+| Scanned after the window (collect-after-close on) | Same form with the countdown at 00:00; on submit a "Prediction time over" dialog, details stored, nothing predicted |
+| Scanned after the window (collect-after-close off) | "Prediction closed" |
+| Result finalized | Full-time score, winning team, score-prize winner (name, masked number, predicted score, time), all winner names, sponsor line |
+| Cancelled session | "Session cancelled" |
+| Invalid or archived QR | "Invalid QR code" |
+
+The page re-syncs with the server every 30 seconds, so a cancellation or a finalized result shows up
+without a reload.
+
+## 5. Business rules
+
+**10-minute window.** A session stores `startTime` and `expiryTime`. The public API returns the server
+time with them; the browser only animates a countdown. The submission transaction re-reads the session
+and PostgreSQL's `now()` and accepts only when `startTime <= now < expiryTime`. A submission at exactly
+the expiry second is rejected with HTTP 410. Client clocks and client-sent timestamps are ignored.
+Active and expired are never stored; they are derived from the clock on every read.
+
+**One prediction per person.** Participants are identified by mobile number, normalized to E.164
+(`DEFAULT_COUNTRY_CODE` is added to 10-digit numbers). `Participant.mobile` and
+`Prediction(sessionId, participantId)` are unique in the database, so simultaneous submissions cannot
+create duplicates; the API answers 409. A session + email check runs in the same transaction.
+
+**Winner-pick sessions.** `homeScore > awayScore` is Home, `<` is Away, `=` is Draw. Predictions equal to
+the outcome become WINNER, all others LOST. The admin can override the official outcome for a ruling.
+
+**Exact-score sessions.** Only an exact score counts: predictions matching both scores become WINNER,
+every other prediction is LOST even when it named the right team. Among the exact scores one
+**score-prize winner** is drawn at random: a Fisher–Yates shuffle (Durstenfeld variant) driven by Node's
+`crypto.randomInt`, which uses the operating-system CSPRNG with rejection sampling, so every entry has
+exactly the same chance. The draw (method, pool, resulting order, winner, time, admin) is written to the
+audit log as `SCORE_WINNER_DRAWN` and shown on the Winners page with runners-up. The preview never draws;
+the draw happens inside the finalization transaction. References:
+[Fisher–Yates shuffle](https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle),
+[crypto.randomInt](https://nodejs.org/api/crypto.html#cryptorandomintmin-max-callback).
+
+**Finalization is permanent.** A finalized result cannot be reopened or edited. Check the score in the
+preview before confirming. A wrong result can only be removed together with its match.
+
+**Timed-out registrations.** When collect-after-close is on, a submission after expiry stores name,
+mobile, email, custom fields and consent as a `LateEntry` and never an outcome or score. One per person
+per session; people who already predicted cannot also register late. They receive no WhatsApp messages
+and appear in exports with `Result = TIMED_OUT`.
+
+**Prediction mode is locked** once a session has predictions (switching between winner pick and exact
+score would make existing entries unevaluable).
+
+**Privacy.** Participant data is visible only in the authenticated admin area and exports. The public
+result screen shows winner names and a masked mobile number of the score-prize winner, never emails or
+full numbers. The participant form carries a short privacy note and an optional consent checkbox.
+
+## 6. Quick start (local development)
+
+Requirements: Node 20.9+ (22 recommended), Docker Desktop (for PostgreSQL) or any PostgreSQL 14+.
 
 ```bash
-cp .env.example .env            # edit AUTH_SECRET at minimum
+cp .env.example .env            # set AUTH_SECRET at minimum
 docker compose up -d            # PostgreSQL 16 on localhost:5432
-npm install
-npm run db:migrate              # creates the schema (prisma migrate dev)
-npm run db:seed                 # creates the SUPER_ADMIN from SEED_ADMIN_* and a demo match
+npm install                     # also runs prisma generate
+npm run db:migrate              # creates the schema
+npm run db:seed                 # creates the super admin and a demo match
 npm run dev                     # http://localhost:3000/admin
-npm run worker                  # in a second terminal: sends queued WhatsApp messages (dry-run by default)
+npm run worker                  # second terminal: sends queued WhatsApp messages (dry run by default)
 ```
 
-Login with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env` (defaults `admin@example.com` / `ChangeMe123!`).
+Default admin: `admin@example.com` / `ChangeMe123!` (from `SEED_ADMIN_*` in `.env`). Change it before
+going live.
 
-To try the participant flow on a phone, set `APP_URL` to a URL the phone can reach (e.g.
-`http://192.168.1.20:3000`, your PC's Wi-Fi IP, or an ngrok tunnel). The QR code embeds `APP_URL`, and the
-phone must be on the same Wi-Fi for a LAN IP. In development Next.js only serves its scripts to hostnames
-listed in `allowedDevOrigins` (`next.config.ts`); private LAN ranges and common tunnel domains are already
-listed, so add yours there if the page loads but buttons do nothing. Restart `npm run dev` after changing
-`next.config.ts`.
+**Testing on a phone.** The QR embeds `APP_URL`, so set it to an address the phone can reach, for example
+your PC's Wi-Fi IP and port (`http://192.168.1.20:3000`), a Tailscale address, or a tunnel URL. The phone
+must be on the same network for a LAN address. In development Next.js serves its scripts only to
+hostnames listed in `allowedDevOrigins` in `next.config.ts`; private LAN ranges, Tailscale and common
+tunnel domains are already listed.
 
-## How the 10-minute rule is enforced
+Useful scripts:
 
-* A session stores `startTime` and `expiryTime = startTime + durationMinutes`.
-* `GET /api/public/sessions/:token` returns `serverTime`, `startTime`, `expiryTime` and the computed status.
-  The browser renders a countdown from those values and re-syncs every 30 s. It never decides anything.
-* `POST /api/public/sessions/:token/prediction` runs one transaction that re-reads the session, reads
-  `SELECT now()` from PostgreSQL and accepts only when `startTime <= now < expiryTime`
-  (`src/lib/window.ts`). A request at exactly `expiryTime` gets HTTP 410.
-* `ACTIVE` and `EXPIRED` are never stored; they are derived from the clock on every read, so a stale row
-  can never keep a window open.
-* Client-supplied timestamps are stripped by the zod schema and ignored.
+| Script | Purpose |
+|---|---|
+| `npm run dev` | development server (add `-- -p 3001` to pick a port) |
+| `npm run build` / `npm start` | production build and server |
+| `npm run worker` | WhatsApp sender loop |
+| `npm test` | unit tests, plus integration tests when `DATABASE_URL` is set |
+| `npm run typecheck` / `npm run lint` | TypeScript and ESLint |
+| `npm run db:migrate` / `db:deploy` / `db:seed` / `db:studio` | Prisma migrations, production migrate, seed, data browser |
 
-## Duplicate protection
+## 7. Configuration (.env)
 
-* Participants are identified by mobile number (normalized to E.164, `DEFAULT_COUNTRY_CODE` is added to
-  10-digit numbers). `Participant.mobile` is UNIQUE and `Prediction(sessionId, participantId)` is UNIQUE.
-* Concurrent submissions from the same user hit the constraint; the API maps it to HTTP 409
-  "You have already submitted your prediction for this match." A secondary session + email check runs
-  inside the same transaction.
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `AUTH_SECRET` | Secret for admin session cookies, at least 32 random characters |
+| `APP_URL` | Public base URL embedded in QR codes, no trailing slash |
+| `APP_TIMEZONE` | IANA zone for admin displays, exports and WhatsApp timestamps (e.g. `Asia/Kolkata`) |
+| `DEFAULT_COUNTRY_CODE` | Digits added to 10-digit mobile numbers entered without a country code (e.g. `91`) |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME` | Super admin created by `npm run db:seed` |
+| `WHATSAPP_DRY_RUN` | `true` logs messages instead of sending them |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_VERSION` | Meta Cloud API credentials |
+| `WHATSAPP_TEMPLATE_LANGUAGE` | Template language code, default `en` |
+| `WHATSAPP_TEMPLATE_SUBMITTED`, `_WINNER`, `_WINNER_DRAW`, `_LOST`, `_SCORE_WINNER`, `_RESULT` | Names of the approved templates |
+| `CRON_SECRET` | Bearer token for `POST /api/jobs/notifications` (serverless alternative to the worker) |
+| `SPONSOR_NAME`, `SPONSOR_TAGLINE`, `SPONSOR_LOGO_URL`, `SPONSOR_URL` | Sponsor branding; empty name hides it. Logo can be a file in `public/sponsors/` or an https URL |
+| `FOOTBALL_API_KEY` | Reserved for a future football data provider |
 
-## Result finalization
+## 8. WhatsApp setup
 
-1. Admin enters the score and clicks **Calculate Winners** → `POST /api/sessions/:id/result/preview`
-   (reads only) → confirmation modal shows the outcome and winner / loser counts.
-2. **Confirm Result** → `POST /api/sessions/:id/result` → one transaction: lock the match row, upsert
-   `MatchResult` as FINAL, `UPDATE predictions SET resultStatus = WINNER` where
-   `selectedOutcome = winningOutcome` and LOST otherwise, mark sessions COMPLETED, insert one notification
-   job per prediction, write the audit log.
-3. A FINAL result refuses further finalization (HTTP 409). Finalized results are permanent: there is no
-   reopen or correction path. A wrong result can only be removed together with its match (Matches → Delete).
+Business-initiated messages must use templates approved in Meta Business Manager. Create these templates
+(positional parameters in this order) and put their names in `.env` if they differ from the defaults:
 
-Winner determination is `homeScore > awayScore → HOME`, `< → AWAY`, `= → DRAW`, with an optional explicit
-override for official rulings. No randomness or heuristics anywhere (`src/lib/results.ts`).
-
-A result belongs to the **match**, not to a session. If several sessions (QR codes / venues) point at the
-same match, finalizing from any of them evaluates all of them; the confirmation modal shows the counts for
-the current session and lists the other sessions that will be evaluated. Use one match per real fixture
-and one session per venue or campaign.
-
-## Deleting a match
-
-Matches → Delete opens a GitHub-style confirmation: the dialog lists what will go (sessions, predictions,
-timed-out registrations, result, notification logs) and the admin must type the exact match name
-("Home vs Away") before the button enables. The API enforces the same check (`DELETE /api/matches/:id`
-with body `{ "confirm": "Home vs Away" }`, otherwise 400 `CONFIRMATION_REQUIRED`). Deletion is permanent
-and audit-logged (`MATCH_DELETED`); participant identities are kept because they may belong to other
-sessions. To hide a single session instead, archive it from the session page.
-
-## Exact score prediction (optional per session)
-
-Enable **Ask for the exact score** on a session. The Home/Away/Draw buttons are replaced by one question:
-the final score for each team. The winning outcome is derived from the score on the server (a draw score
-is rejected when draws are off), so winner/lost evaluation and statistics keep working unchanged.
-
-In a score session **only the exact score counts as a win**: on finalization predictions with the exact
-score become `WINNER` (and `scoreCorrect`), every other prediction becomes `LOST`, even when it named the
-right team. This is a plain comparison, no randomness. If several participants got the exact score, one
-**score-prize winner** is drawn at random among them, like a raffle:
-
-* Pool = all exact-score predictions of the session.
-* Draw = Fisher–Yates shuffle (Durstenfeld variant, Knuth TAOCP vol. 2 Algorithm P) where every swap
-  index comes from Node's `crypto.randomInt`, a cryptographically secure generator that uses rejection
-  sampling, so there is no modulo bias. Every entry in the pool has exactly the same chance; submission
-  time, position or anything else plays no role (`src/lib/draw.ts`, tested in `tests/draw.test.ts`).
-* The winner is the first entry of the shuffled order. The whole draw (method, pool, order, winner,
-  time, admin) is written to the audit log as `SCORE_WINNER_DRAWN`, and the Winners page shows the draw
-  record with runners-up in case a winner has to be replaced.
-* The draw happens inside the finalization transaction only; the preview never draws.
-
-References: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle and
-https://nodejs.org/api/crypto.html#cryptorandomintmin-max-callback.
-
-The score winner receives the `score_winner` WhatsApp template, appears on the Winners page, and is
-flagged in the exports (`Predicted Score`, `Exact Score`, `Score Winner` columns).
-
-## Sponsor branding
-
-The event sponsor is shown on the participant page (hero strip, success / result / time-over screens,
-footer) and on the printable QR poster. Configure it in `.env`:
-
-```
-SPONSOR_NAME=Green Jobs
-SPONSOR_TAGLINE=Presented by
-SPONSOR_LOGO_URL=/sponsors/green-jobs.jpg   # file in public/sponsors or an https URL
-SPONSOR_URL=                                 # optional link
-```
-
-Leave `SPONSOR_NAME` empty to hide the sponsor block. The Green Jobs logo ships in `public/sponsors/`.
-
-## Result and winner on the QR page
-
-Once the admin finalizes the result, anyone who opens the QR link again sees a result screen instead of
-the form: the final score, who won, the drawn score-prize winner (name, masked mobile such as
-`+91••••••••10`, predicted score and submission time) and the names of all winning participants (first
-50, then "and N more"). Mobile numbers and emails are never shown. The success screen tells participants
-to scan again after the match. Controlled per session by **After the result is finalized, show the final
-score and winner names on the QR page** (on by default); with it off the page shows only the score.
-
-## Timed-out registrations (details after the window closes)
-
-By default a session keeps collecting **participant details** after its window has closed (toggle: "After
-the window closes, keep collecting participant details"). The participant page then keeps showing the
-normal form with the countdown at `00:00`. On submit the server rejects the prediction (410), the browser
-stores the details as a `LateEntry` (name, mobile, email, custom fields, consent, timestamp) and shows a
-**Prediction Time Over** popup saying the prediction was not counted. No
-outcome or score is ever stored or evaluated for these rows. With the toggle off, the page shows the plain
-"Prediction Closed" screen instead and nothing is collected.
-
-Rules: `POST /api/public/sessions/:token/late-entry` is accepted only when the database clock is past
-`expiryTime` (409 `WINDOW_OPEN` otherwise), one entry per session + mobile (409 `DUPLICATE`, also when the
-person already has a prediction), 410 for cancelled or opted-out sessions. Admins see them on the session
-page and under the predictions table ("Timed-out registrations"), and exports append them with
-`Result = TIMED_OUT`. They receive no WhatsApp messages.
-
-## WhatsApp notifications
-
-Messages are sent only through approved templates. Register these templates in Meta Business Manager
-(names are configurable through env, parameters are positional in this order):
-
-| Event | Default template name | Parameters `{{1}}..{{n}}` |
+| Event | Default template | Parameters `{{1}}…{{n}}` |
 |---|---|---|
 | Prediction submitted | `prediction_submitted` | name, home_team, away_team, predicted_team, submission_time |
 | Winner | `prediction_winner` | name, home_team, home_score, away_score, away_team, predicted_team |
 | Winner (draw) | `prediction_winner_draw` | name, home_team, home_score, away_score, away_team |
 | Lost | `prediction_lost` | name, home_team, home_score, away_score, away_team, predicted_team |
-| Score winner | `score_winner` | name, home_team, home_score, away_score, away_team |
+| Score-prize winner | `score_winner` | name, home_team, home_score, away_score, away_team |
 | Result announcement (optional) | `result_announcement` | name, home_team, home_score, away_score, away_team, result |
 
-The approved copy for each template is in `src/lib/notifications/templates.ts`.
+The suggested copy for each template is in `src/lib/notifications/templates.ts`.
 
-Delivery: submissions and finalization only *enqueue* rows in `Notification`. The worker claims due rows
-with `FOR UPDATE SKIP LOCKED`, calls the Cloud API, and records `SENT` / `RETRYING` / `FAILED` with the
-provider message id or error. Retries: immediately, after 30 s, after 2 min, then FAILED. Admins see
-per-session counts on the session page and can **Retry Failed**.
+Delivery works through a queue in the `Notification` table. Submissions and finalization only enqueue
+rows; the worker (`npm run worker`) or the cron route claims due rows with `FOR UPDATE SKIP LOCKED`
+(safe with several workers), calls the Cloud API and records `SENT`, `RETRYING` or `FAILED` with the
+provider message id or error. Retries: immediately, after 30 seconds, after 2 minutes, then failed.
+Set `WHATSAPP_DRY_RUN=false` with the token and phone number id to send for real.
 
-Set `WHATSAPP_DRY_RUN=false` plus `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` to send for real.
+## 9. Architecture and project layout
 
-## API
+One Next.js 16 application serves the participant page, the admin console and the REST API. All rules
+live in `src/lib`; route handlers and server-rendered pages call those services. PostgreSQL via Prisma 6
+is the only state store. A separate worker process drains the notification queue.
+
+| Layer | Choice |
+|---|---|
+| App | Next.js 16 (App Router, TypeScript), Tailwind CSS 4 |
+| UI | shadcn/ui on Base UI primitives (`src/components/ui`), lucide-react icons, recharts, sonner toasts, canvas-confetti |
+| Database | PostgreSQL + Prisma 6 |
+| Auth | bcrypt, HS256 JWT (`jose`) in an httpOnly cookie, `src/proxy.ts` gate |
+| Validation | zod on every input |
+| QR / export | `qrcode`, built-in CSV, `exceljs` |
+| Notifications | database queue + worker, Meta WhatsApp Cloud API |
+| Tests | Vitest (unit + PostgreSQL integration) |
+
+```
+prisma/schema.prisma            data model · prisma/migrations · prisma/seed.ts
+public/sponsors/                sponsor logo(s)
+scripts/worker.ts               long-running WhatsApp sender
+src/proxy.ts                    auth gate for /admin and admin APIs
+src/lib/window.ts               the 10-minute decision (pure, unit-tested)
+src/lib/predictions.ts          submission and timed-out registration transactions
+src/lib/results.ts              preview, finalize, score draw record
+src/lib/draw.ts                 Fisher-Yates + crypto.randomInt
+src/lib/sessions.ts matches.ts  services and statistics
+src/lib/notifications/          templates · queue · whatsapp client · worker
+src/lib/export.ts qr.ts sponsor.ts auth.ts jwt.ts validation.ts rate-limit.ts audit.ts http.ts format.ts db.ts
+src/app/api/**                  route handlers
+src/app/admin/**                admin console pages
+src/app/predict/[token]/        participant page
+src/components/admin/           shell, page header, stat cards, charts, status badges, export menu
+src/components/ui/              generated shadcn/ui components
+tests/                          unit tests · tests/integration (needs DATABASE_URL)
+```
+
+## 10. Data model
+
+| Model | Purpose and key constraints |
+|---|---|
+| `AdminUser` | name, email (unique), password hash, role |
+| `Match` | teams, logos, competition, kick-off, venue, `externalId` (unique, for a future data provider) |
+| `MatchResult` | one per match: scores, winning outcome, FINAL status, finalized by / at |
+| `PredictionSession` | secure token (unique, 128 random bits), start / expiry, duration, status, allowDraw, enableScorePrediction, collectLateEntries, showWinnersToParticipants, showResultsToParticipants, requireConsent, campaign / event names, archivedAt |
+| `FormField` | custom participant fields per session (unique session + key) |
+| `Participant` | full name, mobile (unique, E.164), email |
+| `Prediction` | unique session + participant; outcome, predicted score, result status, scoreCorrect, scoreWinner, custom data, consent, submittedAt (database time), ip, user agent |
+| `LateEntry` | details captured after the window closed; unique session + participant |
+| `Notification` | queue and delivery log: type, template, phone, payload, status, attempts, nextAttemptAt, provider id, error |
+| `AuditLog` | actor, action, entity, before / after |
+
+## 11. API reference
+
+Admin routes require the login cookie; mutations also check the `Origin` header.
 
 ```
 POST /api/auth/login                      POST /api/auth/logout
-GET  /api/stats                           (dashboard totals)
-GET|POST /api/matches                     GET|PUT|DELETE /api/matches/:id
-GET|POST /api/sessions                    GET|PUT|DELETE /api/sessions/:id   (DELETE = archive)
+GET  /api/stats                           dashboard totals
+GET|POST /api/matches                     GET|PUT|DELETE /api/matches/:id   (DELETE body: {"confirm":"Home vs Away"})
+GET|POST /api/sessions                    GET|PUT|DELETE /api/sessions/:id  (DELETE = archive)
 POST /api/sessions/:id/cancel             GET  /api/sessions/:id/qr?format=png|svg
 GET  /api/sessions/:id/predictions[?winners=1]
-GET  /api/sessions/:id/results            (counts, percentages, per-minute timeline)
+GET  /api/sessions/:id/results            counts, percentages, per-minute timeline, score winner
 GET  /api/sessions/:id/export?format=csv|xlsx[&winners=1]
-POST /api/sessions/:id/result/preview     POST /api/sessions/:id/result     (finalize, permanent)
-GET  /api/sessions/:id/notifications[?status=FAILED]   POST /api/sessions/:id/notifications/retry
-GET  /api/public/sessions/:token          POST /api/public/sessions/:token/prediction
-POST /api/jobs/notifications              (Authorization: Bearer $CRON_SECRET)
+POST /api/sessions/:id/result/preview     POST /api/sessions/:id/result   (finalize, permanent)
+GET  /api/sessions/:id/notifications[?status=FAILED]     POST /api/sessions/:id/notifications/retry
+GET  /api/public/sessions/:token          session, server time, window, settings, sponsor, result and winners
+POST /api/public/sessions/:token/prediction
+POST /api/public/sessions/:token/late-entry
+POST /api/jobs/notifications              Authorization: Bearer $CRON_SECRET
 ```
 
-Errors are always `{ "error": { "code", "message", "details?" } }`. Public prediction codes:
-`NOT_FOUND` 404, `NOT_STARTED` 403, `EXPIRED` 410, `CANCELLED` 410, `DUPLICATE` 409, `VALIDATION` 422,
-`RATE_LIMITED` 429.
+Errors are always `{ "error": { "code", "message", "details?" } }`.
 
-## Project layout
+| Code | HTTP | When |
+|---|---|---|
+| `NOT_FOUND` | 404 | unknown, draft or archived token |
+| `NOT_STARTED` | 403 | window not open yet |
+| `EXPIRED` | 410 | window closed or session completed |
+| `CANCELLED` | 410 | session cancelled |
+| `DUPLICATE` | 409 | same person already submitted or registered |
+| `WINDOW_OPEN` | 409 | late-entry while predictions are still open |
+| `VALIDATION` | 422 | invalid fields (`details` maps field to message) |
+| `RATE_LIMITED` | 429 | too many requests from one address |
+| `ALREADY_FINAL`, `LOCKED`, `CONFIRMATION_REQUIRED` | 409 / 400 | admin rule violations |
 
-```
-prisma/schema.prisma          data model (see below) · prisma/seed.ts
-src/proxy.ts                  auth gate for /admin and admin APIs
-src/lib/window.ts             the 10-minute decision (pure, unit-tested)
-src/lib/predictions.ts        submission transaction        src/lib/results.ts   finalize
-src/lib/sessions.ts           session service + stats       src/lib/matches.ts
-src/lib/notifications/        templates · queue · whatsapp client · worker
-src/lib/export.ts qr.ts auth.ts jwt.ts validation.ts rate-limit.ts audit.ts http.ts format.ts db.ts
-src/app/api/**                thin route handlers           src/app/admin/**     dashboard UI
-src/app/predict/[token]/      participant page              scripts/worker.ts    long-running sender
-tests/                        vitest unit tests · tests/integration (needs DATABASE_URL)
-```
-
-Data model: `AdminUser`, `Match`, `MatchResult`, `PredictionSession` (secureToken, startTime, expiryTime,
-status DRAFT/SCHEDULED/CANCELLED/COMPLETED, allowDraw, …), `FormField` (custom participant fields per
-session), `Participant` (unique mobile), `Prediction` (unique session + participant, `customData` JSON,
-`resultStatus` PENDING/WINNER/LOST), `Notification` (queue + delivery log), `AuditLog`.
-
-## Security notes
-
-* All business rules run on the server; the browser is untrusted (time, status, validation).
-* Passwords: bcrypt (cost 12). Sessions: signed JWT in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in
-  production), 12 h expiry. Admin mutations also verify the `Origin` header.
-* Role checks in handlers (`requireAdmin(req, role)`), roles SUPER_ADMIN and ADMIN.
-* zod validation with length limits on every input, Prisma parameterized queries, React escaping, logo
-  URLs restricted to http(s), CSV cells neutralized against formula injection.
-* Security headers + CSP in production (`next.config.ts`), `X-Powered-By` removed.
-* Rate limits: login 10 / 15 min per IP, prediction POST 120 / min per IP (generous so a venue behind one
-  NAT keeps working; the DB constraint is the real duplicate guard), public GET 300 / min per IP.
-  The limiter is in-memory per instance; move it to Postgres/Redis if you scale horizontally.
-* QR tokens are 128 random bits (base64url), never derived from ids. Drafts and archived sessions are 404.
-* Participant data is only visible in the authenticated admin area and exports.
-
-## Tests
+## 12. Testing
 
 ```bash
-npm test                 # unit tests always run; integration tests run when DATABASE_URL is set in .env
+npm test
 ```
 
-Covered: 09:59 accepted, exactly 10:00 rejected, 10:01 rejected, duplicate user rejected, invalid token,
-cancelled session, not-started session, concurrent submissions (two users both succeed, one user three
-times yields one record), client timestamps ignored, next-day access rejected, deterministic winner
-evaluation, finalize-once idempotency, audit trail, draw template selection, worker
-draining in dry-run.
+Unit tests always run (window rule, evaluation, draw fairness, templates, validation). Integration tests
+run against the database in `DATABASE_URL` and cover: 09:59 accepted, 10:00 and 10:01 rejected, invalid
+token, cancelled and not-started sessions, next-day access, duplicate and concurrent submissions,
+client timestamps ignored, finalization once with audit trail and queue drain, exact-score evaluation
+with the random draw record and public winner info, timed-out registrations, match deletion.
 
-## Deployment
+## 13. Deployment
 
 Any Node 20.9+ host with PostgreSQL works (Railway, Render, Fly.io, a VPS with PM2, Docker). Vercel works
 too; use the cron route instead of the worker.
 
 1. Provision PostgreSQL and set `DATABASE_URL`.
-2. Set `AUTH_SECRET` (random, ≥ 32 chars), `APP_URL` (public https URL, used in QR codes), `APP_TIMEZONE`,
-   `DEFAULT_COUNTRY_CODE`, WhatsApp variables, and `CRON_SECRET` if using the cron route.
-3. `npm ci && npm run build` (runs `prisma generate`).
-4. `npm run db:deploy` (applies migrations) and `npm run db:seed` once to create the super admin.
+2. Set `AUTH_SECRET`, `APP_URL` (public https URL used in QR codes), `APP_TIMEZONE`,
+   `DEFAULT_COUNTRY_CODE`, the WhatsApp variables, sponsor variables, and `CRON_SECRET` if using the cron route.
+3. `npm ci && npm run build`.
+4. `npm run db:deploy` to apply migrations, then `npm run db:seed` once to create the super admin.
 5. Run `npm start` for the web app and `npm run worker` as a second always-on process
-   (PM2: `pm2 start npm --name worker -- run worker`). On Vercel, add a cron job calling
+   (PM2: `pm2 start npm --name worker -- run worker`). On Vercel, schedule
    `POST /api/jobs/notifications` every minute with the `Authorization: Bearer $CRON_SECRET` header.
-6. Put the app behind HTTPS (required for `Secure` cookies and for phones to trust the QR URL).
-7. Change the seeded admin password: create a new SUPER_ADMIN by re-running the seed with new
-   `SEED_ADMIN_*` values, or update `AdminUser.passwordHash` with a bcrypt hash.
+6. Serve over HTTPS (required for secure cookies and for phones to trust the QR link).
+7. Change the seeded admin password by re-running the seed with new `SEED_ADMIN_*` values.
 
-Docker (web): a plain `node:22-alpine` image running `npm ci && npm run build` then `npm start` works;
-the worker is the same image with `npm run worker`.
+Docker: a `node:22-alpine` image running `npm ci && npm run build` then `npm start` works; the worker is
+the same image running `npm run worker`.
 
-## Future extensions (designed for, not built)
+## 14. Troubleshooting
 
-`Match.externalId` and the match fields map 1:1 to football data providers, so a fetcher can create or
-update matches and results without schema changes. `Prediction.selectedOutcome` can be joined by a
-`questionType` column for correct-score / first-scorer questions. Notification events are an enum; new
-events (reminders, announcements) are a template entry plus an enqueue call.
+| Symptom | Cause and fix |
+|---|---|
+| Phone says the site cannot be reached after scanning | `APP_URL` points to `localhost`. Set it to an address the phone can reach, restart, download the QR again. The QR page warns when the URL is local. |
+| Page loads on the phone but buttons do nothing | Development only: add the hostname to `allowedDevOrigins` in `next.config.ts` and restart `npm run dev`. |
+| Admin pages fail with "Unknown argument" after pulling changes | New migrations were applied; restart the dev server so it loads the regenerated Prisma client. |
+| `npm run dev` picks a different port | Port 3000 is in use. Start with `npm run dev -- -p 3001` and set `APP_URL` to match. |
+| Messages stay queued | Start `npm run worker` (or the cron job). Dry-run mode marks them sent without contacting Meta. |
+| Messages fail | Check the error text under "Show failed" on the session page, fix credentials or template names, then "Retry failed". |
+| Winners show 0 in a score session although people picked the right team | By design: only the exact score wins in score sessions. |
+| A new session shows the result immediately | Its match already has a final result; create a new match for the next fixture. |
+
+## 15. Security
+
+- All rules run on the server; the browser is untrusted for time, status and validation.
+- bcrypt (cost 12) passwords; signed JWT in an httpOnly, SameSite=Lax cookie (Secure in production), 12-hour expiry; Origin check on admin mutations; role checks in handlers.
+- zod validation with length limits on every input, parameterized queries through Prisma, React output escaping, logo URLs limited to http(s), CSV cells neutralized against formula injection.
+- Security headers and a production Content Security Policy in `next.config.ts`.
+- Rate limits: login 10 per 15 minutes per IP, prediction 120 per minute per IP (tolerant of a venue behind one NAT), public reads 300 per minute per IP. The limiter is in-memory per instance.
+- QR tokens are 128 random bits and never derived from database ids. Drafts and archived sessions answer 404.
+- Every admin action is audit-logged.
+
+## 16. Extending the platform
+
+- `Match.externalId` and the match fields map directly to football data providers; a fetcher can create or
+  update matches and results without schema changes (`FOOTBALL_API_KEY` is reserved for it).
+- Additional prediction questions (first scorer, player of the match) fit as new columns or a question
+  type next to `selectedOutcome`; evaluation lives in `src/lib/results.ts`.
+- New notification events are a template entry in `templates.ts` plus an enqueue call.
+- Leaderboards, points, rewards and coupons can build on `Prediction.resultStatus`, `scoreWinner` and the
+  audit log without touching the submission path.
