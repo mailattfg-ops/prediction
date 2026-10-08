@@ -3,6 +3,7 @@ import { ArrowLeft, Download, TriangleAlert } from "lucide-react";
 import { getSession } from "@/lib/sessions";
 import { fmtDateTime } from "@/lib/format";
 import { predictionUrl, qrDataUrl } from "@/lib/qr";
+import { getSponsor } from "@/lib/sponsor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,6 +20,7 @@ export default async function QrPage({ params }: { params: Promise<{ id: string 
   const dataUrl = await qrDataUrl(url);
   const title = `${s.match.homeTeam} vs ${s.match.awayTeam}`;
   const localOnly = /localhost|127\.0\.0\.1/.test(url);
+  const sponsor = getSponsor();
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -49,6 +51,18 @@ export default async function QrPage({ params }: { params: Promise<{ id: string 
       <Card className="print:border-0 print:shadow-none">
         <CardContent className="grid gap-8 md:grid-cols-2 md:items-center">
           <div className="text-center">
+            {sponsor && (
+              <div className="mb-4 inline-flex items-center gap-3 rounded-xl border bg-muted/40 px-4 py-2 print:border-0">
+                {sponsor.logoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-12 rounded-lg object-cover print:size-16" />
+                )}
+                <span className="text-left">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{sponsor.tagline}</span>
+                  <span className="block text-lg font-black leading-tight print:text-2xl">{sponsor.name}</span>
+                </span>
+              </div>
+            )}
             <div className="mx-auto w-full max-w-xs rounded-2xl border bg-white p-4 print:max-w-md print:border-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={dataUrl} alt={`QR code for ${title}`} className="w-full" />

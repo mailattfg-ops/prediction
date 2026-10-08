@@ -123,6 +123,20 @@ https://nodejs.org/api/crypto.html#cryptorandomintmin-max-callback.
 The score winner receives the `score_winner` WhatsApp template, appears on the Winners page, and is
 flagged in the exports (`Predicted Score`, `Exact Score`, `Score Winner` columns).
 
+## Sponsor branding
+
+The event sponsor is shown on the participant page (hero strip, success / result / time-over screens,
+footer) and on the printable QR poster. Configure it in `.env`:
+
+```
+SPONSOR_NAME=Green Jobs
+SPONSOR_TAGLINE=Presented by
+SPONSOR_LOGO_URL=/sponsors/green-jobs.jpg   # file in public/sponsors or an https URL
+SPONSOR_URL=                                 # optional link
+```
+
+Leave `SPONSOR_NAME` empty to hide the sponsor block. The Green Jobs logo ships in `public/sponsors/`.
+
 ## Result and winner on the QR page
 
 Once the admin finalizes the result, anyone who opens the QR link again sees a result screen instead of

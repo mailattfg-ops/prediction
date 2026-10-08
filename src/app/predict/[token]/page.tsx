@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SearchX } from "lucide-react";
 import { getPublicSession } from "@/lib/sessions";
+import { getSponsor } from "@/lib/sponsor";
 import { Card, CardContent } from "@/components/ui/card";
 import { PredictionClient } from "./PredictionClient";
 
@@ -16,6 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function PredictPage({ params }: Props) {
   const { token } = await params;
   const session = await getPublicSession(token);
+  const sponsor = getSponsor();
   return (
     <main className="flex min-h-screen flex-col bg-[radial-gradient(ellipse_at_top,_oklch(0.32_0.06_160),_oklch(0.17_0.03_260)_55%,_oklch(0.14_0.02_260))] px-4 py-6">
       <div className="mx-auto w-full max-w-md flex-1">
@@ -32,6 +34,17 @@ export default async function PredictPage({ params }: Props) {
         )}
       </div>
       <p className="mt-8 text-center text-xs text-white/50">
+        {sponsor && (
+          <>
+            {sponsor.tagline}{" "}
+            {sponsor.url ? (
+              <a href={sponsor.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-white/80 hover:text-white hover:underline">{sponsor.name}</a>
+            ) : (
+              <span className="font-semibold text-white/80">{sponsor.name}</span>
+            )}
+            {" · "}
+          </>
+        )}
         Football Prediction · Powered by{" "}
         <a href="https://www.thinkforgeglobal.com/" target="_blank" rel="noopener noreferrer" className="font-medium text-white/80 hover:text-white hover:underline">
           Think Forge Global

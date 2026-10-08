@@ -165,12 +165,24 @@ describe.skipIf(!HAS_DB)("result finalization (database)", () => {
     const actions = (await prisma.auditLog.findMany({ where: { entityType: "MatchResult", entityId: fin.result.id }, orderBy: { createdAt: "asc" } })).map((a) => a.action);
     expect(actions).toEqual(["ADMIN_RESULT_FINALIZED"]);
 
-    // Worker (dry-run) drains the whole queue, including any backlog left by other sessions in this database.
+    // Worker (dry-run) drains the queue. Another worker (for example `npm run worker` on this machine) may be
+    // draining concurrently and legitimately claim some rows, so wait until this session's rows settle.
     for (let i = 0; i < 1000; i++) {
       const r = await processQueue(200);
       if (!r.processed) break;
     }
-    expect(await prisma.notification.count({ where: { sessionId: s.id, status: "SENT" } })).toBe(8);
+    let sentCount = 0;
+    for (let i = 0; i < 40; i++) {
+      sentCount = await prisma.notification.count({ where: { sessionId: s.id, status: "SENT" } });
+      if (sentCount === 8) break;
+      await new Promise((r) => setTimeout(r, 250));
+      await processQueue(200);
+    }
+    if (sentCount !== 8) {
+      const rows = await prisma.notification.findMany({ where: { sessionId: s.id }, select: { type: true, status: true, attempts: true, errorMessage: true, nextAttemptAt: true } });
+      console.log("DIAG drain failure:", JSON.stringify(rows));
+    }
+    expect(sentCount).toBe(8);
     expect(await prisma.notification.count({ where: { sessionId: s.id, status: { not: "SENT" } } })).toBe(0);
     await prisma.predictionSession.deleteMany({ where: { matchId: m2.id } });
     await prisma.match.delete({ where: { id: m2.id } });

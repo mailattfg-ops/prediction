@@ -116,6 +116,44 @@ export function PredictionClient({ initial }: { initial: PublicSession }) {
   );
 }
 
+/** Sponsor strip for the dark hero: logo tile + "Presented by" + name. */
+function SponsorStrip({ sponsor }: { sponsor: PublicSession["sponsor"] }) {
+  if (!sponsor) return null;
+  const inner = (
+    <>
+      {sponsor.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-12 shrink-0 rounded-xl object-cover ring-2 ring-white/20" />
+      )}
+      <span className="min-w-0">
+        <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">{sponsor.tagline}</span>
+        <span className="block truncate text-lg font-black leading-tight text-white">{sponsor.name}</span>
+      </span>
+    </>
+  );
+  const cls = "mb-4 flex items-center gap-3 rounded-xl bg-white/10 p-2.5 pr-4 ring-1 ring-white/15";
+  return sponsor.url ? (
+    <a href={sponsor.url} target="_blank" rel="noopener noreferrer" className={cn(cls, "hover:bg-white/15")}>{inner}</a>
+  ) : (
+    <div className={cls}>{inner}</div>
+  );
+}
+
+/** Small sponsor line for the white cards. */
+function SponsorLine({ sponsor }: { sponsor: PublicSession["sponsor"] }) {
+  if (!sponsor) return null;
+  return (
+    <div className="mt-6 flex items-center justify-center gap-2 border-t pt-4 text-xs text-muted-foreground">
+      <span>{sponsor.tagline}</span>
+      {sponsor.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={sponsor.logoUrl} alt="" className="size-6 rounded-md object-cover" />
+      )}
+      <span className="font-bold text-foreground">{sponsor.name}</span>
+    </div>
+  );
+}
+
 function TeamBadge({ name, logo }: { name: string; logo: string | null }) {
   const initials = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   return (
@@ -136,6 +174,7 @@ function MatchHeader({ session, phase, remaining }: { session: PublicSession; ph
   const live = !final && phase === "open";
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-white shadow-2xl backdrop-blur">
+      <SponsorStrip sponsor={session.sponsor} />
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Football Prediction</span>
         {live && <Badge className="bg-emerald-500 text-white"><span className="size-1.5 animate-pulse rounded-full bg-white" /> Live</Badge>}
@@ -229,6 +268,7 @@ function ClosedCard({ session }: { session: PublicSession }) {
         <p className="mt-2 text-muted-foreground">The prediction window for this match has ended.</p>
         <p className="mt-1 text-sm text-muted-foreground">Please scan a valid QR code for another active prediction.</p>
         <ResultSplit session={session} />
+        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -286,6 +326,7 @@ function ResultCard({ session }: { session: PublicSession }) {
         )}
         <ResultSplit session={session} />
         <p className="mt-6 text-xs text-muted-foreground">Thank you for participating!</p>
+        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -301,6 +342,7 @@ function TimeOutCard({ session }: { session: PublicSession }) {
         <div className="mt-4 text-lg font-bold">{session.match.homeTeam} vs {session.match.awayTeam}</div>
         <p className="mt-3 text-muted-foreground">Thank you for your interest.</p>
         <ResultSplit session={session} />
+        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );
@@ -328,6 +370,7 @@ function SuccessCard({ session, predictedTeam, score }: { session: PublicSession
           A WhatsApp confirmation will be sent to your number. After the match, the final score and the winner are announced on WhatsApp and right here: scan the QR code again to see them.
         </p>
         <ResultSplit session={session} />
+        <SponsorLine sponsor={session.sponsor} />
       </CardContent>
     </Card>
   );

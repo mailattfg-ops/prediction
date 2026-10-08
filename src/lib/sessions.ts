@@ -5,6 +5,7 @@ import { ApiError } from "./http";
 import { audit } from "./audit";
 import { computeExpiry, effectiveStatus } from "./window";
 import { fmtDateTime } from "./format";
+import { getSponsor } from "./sponsor";
 import type { SessionInput } from "./validation";
 
 /** 128 random bits, URL-safe. Never derived from a database id. */
@@ -170,6 +171,7 @@ export async function getPublicSession(token: string) {
     results,
     finalScore: final ? { homeScore: final.homeScore, awayScore: final.awayScore, winningOutcome: final.winningOutcome } : null,
     winners,
+    sponsor: getSponsor(),
   };
 }
 
