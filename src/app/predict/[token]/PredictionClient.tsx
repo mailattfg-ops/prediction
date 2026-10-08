@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SponsorMark } from "@/components/sponsor-mark";
+import { BrandMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 
 type Phase = "upcoming" | "open" | "closed" | "cancelled";
@@ -142,10 +144,10 @@ function SponsorBar({ sponsor, live }: { sponsor: PublicSession["sponsor"]; live
   return (
     <div className={cn(enter, "flex items-center justify-between gap-3 rounded-2xl bg-white/[0.07] p-2 pr-3 ring-1 ring-white/10 backdrop-blur-md")}>
       {sponsor ? (
-        <SponsorIdentity sponsor={sponsor} />
+        <SponsorMark sponsor={sponsor} />
       ) : (
         <div className="flex items-center gap-3 pl-1">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/20 text-lg">⚽</span>
+          <BrandMark size="md" />
           <span className="font-display text-2xl tracking-wide">Football Prediction</span>
         </div>
       )}
@@ -156,29 +158,6 @@ function SponsorBar({ sponsor, live }: { sponsor: PublicSession["sponsor"]; live
         </Badge>
       )}
     </div>
-  );
-}
-
-function SponsorIdentity({ sponsor }: { sponsor: NonNullable<PublicSession["sponsor"]> }) {
-  const inner = (
-    <>
-      {sponsor.logoUrl && (
-        <span className="relative size-12 shrink-0 overflow-hidden rounded-xl ring-2 ring-emerald-400/40 shadow-[0_0_28px_-6px_oklch(0.75_0.2_150)]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={sponsor.logoUrl} alt={`${sponsor.name} logo`} className="size-full scale-[1.7] object-cover" />
-        </span>
-      )}
-      <span className="min-w-0 leading-none">
-        <span className="block text-[10px] font-semibold uppercase tracking-[0.28em] text-emerald-300/90">{sponsor.tagline}</span>
-        <span className="mt-1 block truncate font-display text-[26px] tracking-wide text-white">{sponsor.name}</span>
-      </span>
-    </>
-  );
-  const cls = "flex min-w-0 items-center gap-3";
-  return sponsor.url ? (
-    <a href={sponsor.url} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
-  ) : (
-    <div className={cls}>{inner}</div>
   );
 }
 

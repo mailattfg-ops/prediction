@@ -8,7 +8,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const admin = await getAdmin();
   if (!admin) return <>{children}</>;
   return (
-    <AdminShell user={{ name: admin.name, email: admin.email, role: admin.role }} sponsor={getSponsor()}>
+    <AdminShell user={{ name: admin.name, email: admin.email, role: admin.role, avatarUrl: process.env.ADMIN_AVATAR_URL?.trim() || null }} sponsor={getSponsor()}>
       {children}
     </AdminShell>
   );

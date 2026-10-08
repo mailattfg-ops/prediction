@@ -9,10 +9,22 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/components/api";
+import { BrandMark } from "@/components/brand-mark";
 import type { Sponsor } from "@/lib/sponsor";
 import { cn } from "@/lib/utils";
 
-type User = { name: string; email: string; role: string };
+type User = { name: string; email: string; role: string; avatarUrl: string | null };
+
+/** Profile icon: the configured image, otherwise a green letter avatar (Green Jobs style). */
+function Avatar({ user, className }: { user: User; className?: string }) {
+  const letter = (user.name.trim()[0] ?? "A").toUpperCase();
+  return user.avatarUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={user.avatarUrl} alt="" className={cn("size-9 shrink-0 rounded-full object-cover ring-2 ring-white/15", className)} />
+  ) : (
+    <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full bg-[#689F38] text-base font-medium text-white ring-2 ring-white/15", className)}>{letter}</span>
+  );
+}
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -52,7 +64,7 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
 
   const brand = (
     <div className="flex items-center gap-3">
-      <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-lg shadow-[0_8px_20px_-8px_oklch(0.7_0.17_160)]">⚽</span>
+      <BrandMark size="md" />
       <div className="leading-none">
         <div className="font-display text-[22px] tracking-wide">Prediction</div>
         <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/50">Admin console</div>
@@ -112,7 +124,7 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
               <div className="mt-auto p-3">{partner}</div>
             </SheetContent>
           </Sheet>
-          <span className="font-display text-xl tracking-wide">⚽ Prediction</span>
+          <span className="flex items-center gap-2 font-display text-xl tracking-wide"><BrandMark size="sm" /> Prediction</span>
           <div className="ml-auto">
             <UserMenu user={user} />
           </div>
@@ -125,7 +137,6 @@ export function AdminShell({ user, sponsor, children }: { user: User; sponsor: S
 
 function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean }) {
   const router = useRouter();
-  const initials = user.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -136,7 +147,7 @@ function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean
           />
         }
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/30 to-emerald-600/30 text-xs font-bold text-emerald-300 ring-1 ring-emerald-400/30">{initials || "A"}</span>
+        <Avatar user={user} className={onSidebar ? "size-10" : "size-8"} />
         {onSidebar && (
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-sm font-medium">{user.name}</span>
@@ -146,9 +157,12 @@ function UserMenu({ user, onSidebar = false }: { user: User; onSidebar?: boolean
         <ChevronDown className="size-4 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align={onSidebar ? "start" : "end"} className="w-56">
-        <DropdownMenuLabel>
-          <div className="text-sm font-medium text-foreground">{user.name}</div>
-          <div className="truncate text-xs font-normal">{user.email}</div>
+        <DropdownMenuLabel className="flex items-center gap-3">
+          <Avatar user={user} className="ring-border" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">{user.name}</div>
+            <div className="truncate text-xs font-normal">{user.email}</div>
+          </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled>
