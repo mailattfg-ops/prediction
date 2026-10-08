@@ -91,6 +91,9 @@ export async function updateSession(id: string, input: SessionInput, actorId: st
   if (before.status === "CANCELLED" || before.status === "COMPLETED") {
     throw new ApiError(409, "LOCKED", "Cancelled or completed sessions cannot be edited.");
   }
+  if (before.enableScorePrediction !== input.enableScorePrediction && before._count.predictions > 0) {
+    throw new ApiError(409, "LOCKED", "The prediction mode cannot be changed after predictions have been submitted.");
+  }
   await assertMatchExists(input.matchId);
   return prisma.$transaction(async (tx) => {
     await tx.formField.deleteMany({ where: { sessionId: id } });

@@ -35,11 +35,12 @@ export async function previewResult(sessionId: string, input: ResultInput) {
     }),
   ]);
   const total = rows.reduce((a, r) => a + r._count._all, 0);
-  const winners = rows.find((r) => r.selectedOutcome === winningOutcome)?._count._all ?? 0;
   // The score winner is drawn at random inside finalizeResult, never pre-selected here.
   const exactScoreCount = session.enableScorePrediction
     ? await prisma.prediction.count({ where: { sessionId, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore } })
     : 0;
+  // Score sessions: only the exact score is a win. Winner-pick sessions: the outcome decides.
+  const winners = session.enableScorePrediction ? exactScoreCount : (rows.find((r) => r.selectedOutcome === winningOutcome)?._count._all ?? 0);
   return {
     otherSessions: otherSessions.map((s) => ({
       id: s.id,
@@ -85,17 +86,21 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
     });
 
     const where = { session: { matchId } };
-    const winners = await tx.prediction.updateMany({ where: { ...where, selectedOutcome: winningOutcome }, data: { resultStatus: "WINNER" } });
-    const losers = await tx.prediction.updateMany({ where: { ...where, selectedOutcome: { not: winningOutcome } }, data: { resultStatus: "LOST" } });
+    // Winner-pick sessions: the outcome decides WINNER / LOST.
+    const pickWhere = { session: { matchId, enableScorePrediction: false } };
+    const pickWinners = await tx.prediction.updateMany({ where: { ...pickWhere, selectedOutcome: winningOutcome }, data: { resultStatus: "WINNER" } });
+    const pickLosers = await tx.prediction.updateMany({ where: { ...pickWhere, selectedOutcome: { not: winningOutcome } }, data: { resultStatus: "LOST" } });
+    // Score sessions: only the exact score is a win; the right team with a wrong score is LOST.
+    // Whether a score is correct is a plain comparison; who gets the score prize among the correct ones
+    // is a raffle: a cryptographically secure random draw, recorded in the audit log.
+    const scoreWhere = { session: { matchId, enableScorePrediction: true } };
+    const scoreAll = await tx.prediction.updateMany({ where: scoreWhere, data: { resultStatus: "LOST", scoreCorrect: false, scoreWinner: false } });
+    const scoreExact = await tx.prediction.updateMany({
+      where: { ...scoreWhere, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore },
+      data: { resultStatus: "WINNER", scoreCorrect: true },
+    });
     await tx.predictionSession.updateMany({ where: { matchId, status: "SCHEDULED" }, data: { status: "COMPLETED" } });
 
-    // Exact-score evaluation. Whether a score is correct is a plain comparison; who wins the score prize
-    // among the correct ones is a raffle: a cryptographically secure random draw, recorded in the audit log.
-    await tx.prediction.updateMany({ where: { ...where, predictedHomeScore: { not: null } }, data: { scoreCorrect: false, scoreWinner: false } });
-    await tx.prediction.updateMany({
-      where: { ...where, predictedHomeScore: input.homeScore, predictedAwayScore: input.awayScore },
-      data: { scoreCorrect: true },
-    });
     const scoreSessions = await tx.predictionSession.findMany({ where: { matchId, enableScorePrediction: true }, select: { id: true } });
     let scoreWinners = 0;
     for (const ss of scoreSessions) {
@@ -129,7 +134,13 @@ export async function finalizeResult(sessionId: string, input: ResultInput, acto
       before: existing ?? undefined,
       after: result,
     });
-    return { result, winners: winners.count, losers: losers.count, scoreWinners, notificationsQueued: preds.length + scoreWinners };
+    return {
+      result,
+      winners: pickWinners.count + scoreExact.count,
+      losers: pickLosers.count + (scoreAll.count - scoreExact.count),
+      scoreWinners,
+      notificationsQueued: preds.length + scoreWinners,
+    };
   });
 }
 

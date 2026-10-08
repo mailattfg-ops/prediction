@@ -67,8 +67,8 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
         </dl>
         {stats.scoreEnabled && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            🏆 Exact score predicted by <strong>{stats.scoreCorrect}</strong> participant(s).{" "}
-            {stats.scoreWinnerName ? <>Score winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score winner."}
+            🏆 In this session only exact scores count as winners: <strong>{stats.scoreCorrect}</strong> participant(s).{" "}
+            {stats.scoreWinnerName ? <>Score-prize winner (random draw): <strong>{stats.scoreWinnerName}</strong>.</> : "No score-prize winner."}
           </div>
         )}
         {error && <Alert>{error}</Alert>}
@@ -125,7 +125,13 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
                 ? `${homeTeam} and ${awayTeam} drew ${preview.homeScore}-${preview.awayScore}.`
                 : `${label(preview.winningOutcome)} won ${preview.winningOutcome === "HOME" ? `${preview.homeScore}-${preview.awayScore}` : `${preview.awayScore}-${preview.homeScore}`}.`}
             </p>
-            <p className="text-slate-700">All participants who predicted <strong>{label(preview.winningOutcome)}</strong> will be marked as winners.</p>
+            {preview.scoreEnabled ? (
+              <p className="text-slate-700">
+                Only participants who predicted the exact score <strong>{preview.homeScore}-{preview.awayScore}</strong> will be marked as winners. Predicting the right team with a different score counts as lost.
+              </p>
+            ) : (
+              <p className="text-slate-700">All participants who predicted <strong>{label(preview.winningOutcome)}</strong> will be marked as winners.</p>
+            )}
             <p className="text-xs text-slate-500">Numbers below are for this session only.</p>
             {preview.overridden && <Alert>You overrode the automatic outcome ({label(preview.autoOutcome)}). Make sure this matches the official ruling.</Alert>}
             <dl className="grid grid-cols-3 gap-2 text-center">
@@ -143,10 +149,10 @@ export function ResultPanel({ sessionId, homeTeam, awayTeam, result, isSuperAdmi
               <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">
                 🏆 Exact score {preview.homeScore}-{preview.awayScore} predicted by <strong>{preview.exactScoreCount}</strong> participant(s).{" "}
                 {preview.exactScoreCount > 1
-                  ? "One score winner will be drawn at random among them when you confirm (cryptographically secure draw, recorded in the audit log)."
+                  ? "They are the winners; one of them will be drawn at random as the score-prize winner when you confirm (cryptographically secure draw, recorded in the audit log)."
                   : preview.exactScoreCount === 1
-                    ? "That participant becomes the score winner when you confirm."
-                    : "No score winner will be selected."}
+                    ? "That participant is the only winner and becomes the score-prize winner when you confirm."
+                    : "Nobody wins in this session."}
               </p>
             )}
             <p className="text-xs text-slate-500">Finalizing stores the result, marks every prediction WINNER or LOST and queues WhatsApp result notifications. It cannot be repeated without a Super Admin reopening the result.</p>

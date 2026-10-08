@@ -39,7 +39,7 @@ export default async function MatchesPage() {
                     <div className="flex flex-wrap gap-3 text-xs">
                       <Link href={`/admin/sessions/new?matchId=${m.id}`} className="text-emerald-700 hover:underline">New session</Link>
                       <Link href={`/admin/matches/${m.id}/edit`} className="text-sky-700 hover:underline">Edit</Link>
-                      {m._count.sessions === 0 && <MatchDeleteButton id={m.id} label={`${m.homeTeam} vs ${m.awayTeam}`} />}
+                      <MatchDeleteButton id={m.id} label={`${m.homeTeam} vs ${m.awayTeam}`} />
                     </div>
                   </Td>
                 </tr>

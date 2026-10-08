@@ -87,14 +87,25 @@ same match, finalizing from any of them evaluates all of them; the confirmation 
 the current session and lists the other sessions that will be evaluated. Use one match per real fixture
 and one session per venue or campaign.
 
+## Deleting a match
+
+Matches → Delete opens a GitHub-style confirmation: the dialog lists what will go (sessions, predictions,
+timed-out registrations, result, notification logs) and the admin must type the exact match name
+("Home vs Away") before the button enables. The API enforces the same check (`DELETE /api/matches/:id`
+with body `{ "confirm": "Home vs Away" }`, otherwise 400 `CONFIRMATION_REQUIRED`). Deletion is permanent
+and audit-logged (`MATCH_DELETED`); participant identities are kept because they may belong to other
+sessions. To hide a single session instead, archive it from the session page.
+
 ## Exact score prediction (optional per session)
 
 Enable **Ask for the exact score** on a session. The Home/Away/Draw buttons are replaced by one question:
 the final score for each team. The winning outcome is derived from the score on the server (a draw score
 is rejected when draws are off), so winner/lost evaluation and statistics keep working unchanged.
 
-On finalization every prediction with the exact score is marked `scoreCorrect` (a plain comparison, no
-randomness). If several participants got it right, one **score winner** is drawn at random, like a raffle:
+In a score session **only the exact score counts as a win**: on finalization predictions with the exact
+score become `WINNER` (and `scoreCorrect`), every other prediction becomes `LOST`, even when it named the
+right team. This is a plain comparison, no randomness. If several participants got the exact score, one
+**score-prize winner** is drawn at random among them, like a raffle:
 
 * Pool = all exact-score predictions of the session.
 * Draw = Fisher–Yates shuffle (Durstenfeld variant, Knuth TAOCP vol. 2 Algorithm P) where every swap

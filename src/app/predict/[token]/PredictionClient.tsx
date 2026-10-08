@@ -414,7 +414,7 @@ function PredictionForm({ session, onSuccess, onTimedOut, onClosed }: {
             <p className="mt-1 text-sm text-rose-600">{errors.predictedHomeScore || errors.predictedAwayScore || errors.selectedOutcome}</p>
           )}
           <p className="mt-1 text-xs text-slate-500">
-            The winning team follows from your score. Get the exact score to win the score prize; if several people get it right, one winner is drawn at random.
+            Only the exact score counts as a correct prediction. If several people get it right, one winner is drawn at random.
           </p>
         </div>
       )}

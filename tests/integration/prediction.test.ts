@@ -9,6 +9,7 @@ import { submitLateEntry, submitPrediction } from "@/lib/predictions";
 import { finalizeResult, previewResult, reopenResult } from "@/lib/results";
 import { processQueue } from "@/lib/notifications/worker";
 import { generateToken } from "@/lib/sessions";
+import { deleteMatch } from "@/lib/matches";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const prefix = `+9177${Date.now().toString().slice(-7)}`;
@@ -193,21 +194,23 @@ describe.skipIf(!HAS_DB)("exact score prediction (database)", () => {
     const first = await submitPrediction(s.secureToken, body({ predictedHomeScore: "2", predictedAwayScore: "1" }));
     const second = await submitPrediction(s.secureToken, body({ predictedHomeScore: 2, predictedAwayScore: 1 }));
     await submitPrediction(s.secureToken, body({ selectedOutcome: "AWAY", predictedHomeScore: "0", predictedAwayScore: "1" }));
+    await submitPrediction(s.secureToken, body({ predictedHomeScore: "3", predictedAwayScore: "1" })); // right team, wrong score -> LOST
     expect(first.prediction).toMatchObject({ predictedHomeScore: 2, predictedAwayScore: 1, scoreCorrect: null, scoreWinner: false });
 
     const preview = await previewResult(s.id, { homeScore: 2, awayScore: 1 });
-    expect(preview).toMatchObject({ scoreEnabled: true, exactScoreCount: 2 });
+    expect(preview).toMatchObject({ scoreEnabled: true, exactScoreCount: 2, total: 4, winners: 2, losers: 2 });
     expect(await prisma.auditLog.count({ where: { action: "SCORE_WINNER_DRAWN", entityId: s.id } })).toBe(0); // preview never draws
 
     const fin = await finalizeResult(s.id, { homeScore: 2, awayScore: 1 }, admin.id);
-    expect(fin).toMatchObject({ winners: 2, losers: 1, scoreWinners: 1, notificationsQueued: 4 });
+    expect(fin).toMatchObject({ winners: 2, losers: 2, scoreWinners: 1, notificationsQueued: 5 });
     const rows = await prisma.prediction.findMany({ where: { sessionId: s.id }, orderBy: { submittedAt: "asc" } });
-    expect(rows.map((r) => r.scoreCorrect)).toEqual([true, true, false]);
+    expect(rows.map((r) => r.scoreCorrect)).toEqual([true, true, false, false]);
+    expect(rows.map((r) => r.resultStatus)).toEqual(["WINNER", "WINNER", "LOST", "LOST"]); // right team + wrong score is LOST
     // Exactly one score winner, drawn among the two exact scores; the wrong score can never win.
     const winners = rows.filter((r) => r.scoreWinner);
     expect(winners).toHaveLength(1);
     expect([first.prediction.id, second.prediction.id]).toContain(winners[0].id);
-    expect(rows[2].scoreWinner).toBe(false);
+    expect(rows[2].scoreWinner || rows[3].scoreWinner).toBe(false);
     const notif = await prisma.notification.findMany({ where: { sessionId: s.id, type: "SCORE_WINNER" } });
     expect(notif).toHaveLength(1);
     expect(notif[0].predictionId).toBe(winners[0].id);
@@ -266,5 +269,33 @@ describe.skipIf(!HAS_DB)("timed-out registrations (database)", () => {
     const cancelled = await makeSession({ startOffsetMin: -11, status: "CANCELLED" });
     await expect(submitLateEntry(cancelled.secureToken, body())).rejects.toMatchObject({ httpStatus: 410, code: "CANCELLED" });
     await expect(submitLateEntry("not-a-token", body())).rejects.toMatchObject({ httpStatus: 404 });
+  });
+});
+
+describe.skipIf(!HAS_DB)("match deletion (database)", () => {
+  it("requires the exact match name, then removes sessions, predictions, late entries, notifications and result", async () => {
+    const m = await prisma.match.create({ data: { homeTeam: "Ajax", awayTeam: "PSV", kickoffAt: new Date() } });
+    const open = await makeSession({ startOffsetMin: -1, matchId: m.id });
+    const expired = await makeSession({ startOffsetMin: -11, matchId: m.id });
+    const { participant } = await submitPrediction(open.secureToken, body());
+    await submitLateEntry(expired.secureToken, body());
+    await finalizeResult(open.id, { homeScore: 1, awayScore: 0 }, admin.id);
+    expect(await prisma.notification.count({ where: { sessionId: open.id } })).toBe(2);
+
+    await expect(deleteMatch(m.id, admin.id, undefined)).rejects.toMatchObject({ httpStatus: 400, code: "CONFIRMATION_REQUIRED" });
+    await expect(deleteMatch(m.id, admin.id, "Ajax v PSV")).rejects.toMatchObject({ httpStatus: 400, code: "CONFIRMATION_REQUIRED" });
+    await expect(deleteMatch(m.id, admin.id, "ajax vs psv")).rejects.toMatchObject({ httpStatus: 400 }); // exact, case-sensitive
+    expect(await prisma.match.findUnique({ where: { id: m.id } })).not.toBeNull(); // nothing happened yet
+
+    expect(await deleteMatch(m.id, admin.id, "  Ajax vs PSV ")).toEqual({ sessions: 2, predictions: 1, lateEntries: 1 });
+    expect(await prisma.match.findUnique({ where: { id: m.id } })).toBeNull();
+    expect(await prisma.matchResult.findUnique({ where: { matchId: m.id } })).toBeNull();
+    expect(await prisma.predictionSession.count({ where: { matchId: m.id } })).toBe(0);
+    expect(await prisma.prediction.count({ where: { sessionId: { in: [open.id, expired.id] } } })).toBe(0);
+    expect(await prisma.lateEntry.count({ where: { sessionId: { in: [open.id, expired.id] } } })).toBe(0);
+    expect(await prisma.notification.count({ where: { sessionId: { in: [open.id, expired.id] } } })).toBe(0);
+    expect(await prisma.participant.findUnique({ where: { id: participant.id } })).not.toBeNull(); // identity kept
+    expect(await prisma.auditLog.count({ where: { action: "MATCH_DELETED", entityId: m.id } })).toBe(1);
+    await expect(deleteMatch(m.id, admin.id, "Ajax vs PSV")).rejects.toMatchObject({ httpStatus: 404 });
   });
 });
