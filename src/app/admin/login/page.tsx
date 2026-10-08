@@ -14,6 +14,10 @@ const POINTS = [
 
 export default function LoginPage() {
   const sponsor = getSponsor();
+  // Demo autofill is only offered when both variables are set (leave them empty in production).
+  const demoEmail = process.env.DEMO_LOGIN_EMAIL?.trim();
+  const demoPassword = process.env.DEMO_LOGIN_PASSWORD;
+  const demo = demoEmail && demoPassword ? { email: demoEmail, password: demoPassword } : null;
   const enter = "animate-in fade-in slide-in-from-bottom-3 duration-500 fill-mode-both";
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#0b1220] text-white">
@@ -41,7 +45,7 @@ export default function LoginPage() {
         </section>
 
         <section className={`${enter} w-full max-w-md justify-self-center md:justify-self-end [animation-delay:120ms]`}>
-          <LoginForm />
+          <LoginForm demo={demo} />
         </section>
       </div>
       <p className="relative pb-6 text-center text-xs text-white/40">

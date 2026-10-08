@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Wand2 } from "lucide-react";
 import { api, ApiClientError } from "@/components/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,9 @@ import { BrandMark } from "@/components/brand-mark";
 
 const field = "h-12 rounded-xl border-white/10 bg-black/35 pl-10 text-base text-white shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] placeholder:text-white/30 hover:border-white/20 focus-visible:border-emerald-400/60 focus-visible:ring-emerald-400/25";
 
-export function LoginForm() {
+type Demo = { email: string; password: string } | null;
+
+export function LoginForm({ demo = null }: { demo?: Demo }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,12 +21,11 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function login(creds: { email: string; password: string }) {
     setBusy(true);
     setError(null);
     try {
-      await api("/api/auth/login", { method: "POST", body: { email, password } });
+      await api("/api/auth/login", { method: "POST", body: creds });
       const next = new URLSearchParams(window.location.search).get("next");
       router.push(next && next.startsWith("/admin") ? next : "/admin");
       router.refresh();
@@ -32,6 +33,19 @@ export function LoginForm() {
       setError((err as ApiClientError).message);
       setBusy(false);
     }
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    void login({ email, password });
+  }
+
+  /** Fills the demo account into the fields and signs in straight away. */
+  function useDemo() {
+    if (!demo) return;
+    setEmail(demo.email);
+    setPassword(demo.password);
+    void login(demo);
   }
 
   return (
@@ -77,6 +91,21 @@ export function LoginForm() {
             {busy ? "Signing in…" : "Enter the console"}
             {!busy && <ArrowRight data-icon="inline-end" />}
           </Button>
+          {demo && (
+            <>
+              <div className="flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">
+                <span className="h-px flex-1 bg-white/10" />
+                Demo
+                <span className="h-px flex-1 bg-white/10" />
+              </div>
+              <Button type="button" variant="outline" size="lg" disabled={busy} onClick={useDemo} className="h-12 w-full rounded-2xl border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 hover:text-white">
+                <Wand2 data-icon="inline-start" /> Autofill demo credentials & sign in
+              </Button>
+              <p className="text-center text-[11px] text-white/40">
+                Fills <span className="text-white/60">{demo.email}</span> and signs you in. Remove the demo variables from the environment to hide this.
+              </p>
+            </>
+          )}
         </form>
         <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-white/45">
           <ShieldCheck className="size-3.5 text-emerald-300" /> Admin access only. Sessions expire after 12 hours.
